@@ -134,11 +134,12 @@ int32_t computeStepSize(double freq, int offset) {
 const int32_t stepSizes [] = {computeStepSize(440, -9), computeStepSize(440, -8), computeStepSize(440, -7), computeStepSize(440, -6), computeStepSize(440, -5),computeStepSize(440, -4), computeStepSize(440, -3), computeStepSize(440, -2), computeStepSize(440, -1), computeStepSize(440, 0), computeStepSize(440, 1), computeStepSize(440, 2)};
 const char* keysList [] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 // Store the current stepSize in a volatile variable
-volatile int32_t currentStepSize;
+volatile int32_t currentStepSize = 0;
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 const char* setCurrentStepSizeAndGetKey(uint8_t keyArray[7]) {
   const char* currentKey = "";
+  int32_t localCurrentStepSize = 0;
   // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
   for (int i=0 ; i <= 2 ; i++) {
     // Iterate through the last 4 bits of the row's value, checking each time if it is zero
@@ -146,11 +147,13 @@ const char* setCurrentStepSizeAndGetKey(uint8_t keyArray[7]) {
         bool isSelected = !(((keyArray[i] >> j)) & 0x01);
         // If it is zero, then the key is being pressed
         if (isSelected) {
-          currentStepSize = stepSizes[i*4+j];
+          localCurrentStepSize = stepSizes[i*4+j];
           currentKey = keysList[i*4+j];
         }
     }
   }
+  __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+  // equivalent to currentStepSize = localCurrentStepSize;
   return currentKey;
 }
 
