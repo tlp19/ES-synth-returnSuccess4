@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
+#include <STM32FreeRTOS.h>
 #include <math.h>
 
 //Constants
@@ -135,10 +136,14 @@ const int32_t stepSizes [] = {computeStepSize(440, -9), computeStepSize(440, -8)
 const char* keysList [] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 // Store the current stepSize in a volatile variable
 volatile int32_t currentStepSize = 0;
+// Store the currentKey being played
+volatile char* currentKey;
+
+// Reading from the keyboard
+volatile uint8_t keyArray[7];
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
-const char* setCurrentStepSizeAndGetKey(uint8_t keyArray[7]) {
-  const char* currentKey = "";
+void setCurrentStepSize() {
   int32_t localCurrentStepSize = 0;
   // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
   for (int i=0 ; i <= 2 ; i++) {
@@ -148,14 +153,34 @@ const char* setCurrentStepSizeAndGetKey(uint8_t keyArray[7]) {
         // If it is zero, then the key is being pressed
         if (isSelected) {
           localCurrentStepSize = stepSizes[i*4+j];
-          currentKey = keysList[i*4+j];
         }
     }
   }
   __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
   // equivalent to currentStepSize = localCurrentStepSize;
+}
+
+/// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
+const char* getCurrentKey() {
+  const char* currentKey = "";
+  // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
+  for (int i=0 ; i <= 2 ; i++) {
+    // Iterate through the last 4 bits of the row's value, checking each time if it is zero
+    for (int j=0 ; j <= 3 ; j++) {
+        bool isSelected = !(((keyArray[i] >> j)) & 0x01);
+        // If it is zero, then the key is being pressed
+        if (isSelected) {
+          currentKey = keysList[i*4+j];
+        }
+    }
+  }
   return currentKey;
 }
+
+// ========================  INTERRUPTS & THREADS  ===========================
+
+
+// ------------------------------ INTERRUPTS ----------------------------
 
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
@@ -165,10 +190,67 @@ void sampleISR() {
   analogWrite(OUTR_PIN, Vout + 128);
 }
 
+// -------------------------------- THREADS -----------------------------
+
+// THREAD: Scan the keys and set the currentStepSize
+void scanKeysTask(void * pvParameters) {
+  // Define parameters for how to run the thread
+  const TickType_t xFrequency = 50/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
+  TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
+
+  // Body of the thread (i.e. what it does)
+  while(1){
+    for (int i=0 ; i<=2 ; i++) {
+      // Select the row in the matrix we want to read from
+      setRow(i);
+      // Small delay for parasitic capacitance
+      delayMicroseconds(3);
+      keyArray[i] = readCols();
+    }
+    setCurrentStepSize();
+
+    // Delay the next execution until new initiation according to xFrequency
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+  }
+}
+
+// THREAD: Update the display on the device
+void displayUpdateTask(void * pvParameters) {
+  // Define parameters for how to run the thread
+  const TickType_t xFrequency = 100/portTICK_PERIOD_MS;  //Initiation interval -> 100ms
+  TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
+
+  // Body of the thread (i.e. what it does)
+  while(1){
+    //Update display
+    u8g2.clearBuffer();         // clear the internal memory
+    u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
+
+    // a. Text
+    u8g2.drawStr(2,10,"Hello World!");  // write something to the internal memory
+
+    // b. Print the keyArray as a hexadecimal number
+    uint32_t value = keyArray[0] + (keyArray[1] << 4) + (keyArray[2] << 8);
+    u8g2.setCursor(2,20);
+    u8g2.print(value,HEX);
+
+    // c. Print the key to the screen
+    const char* key = getCurrentKey();
+    u8g2.drawStr(2,30, key); 
+
+    //Send to the display
+    u8g2.sendBuffer();          // transfer internal memory to the display
+
+    //Toggle LED
+    digitalToggle(LED_BUILTIN);
+
+    // Delay the next execution until new initiation according to xFrequency
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+  }
+}
 
 
-/// ----------------------------------------------------------------------------------------------------------------
-
+/// =========================== ARDUINO SETUP & LOOP ===================================
 
 void setup() {
   // put your setup code here, to run once:
@@ -208,48 +290,42 @@ void setup() {
     Serial.println(stepSizes[i]);
   }
 
-  // Initialize timer
+  // ---- INITIALIZE INTERRUPTS AND THREADS: ----
+
+  // Initialize timer for interrupt
   TIM_TypeDef *Instance = TIM1;
   HardwareTimer *sampleTimer = new HardwareTimer(Instance);
   sampleTimer->setOverflow(22000, HERTZ_FORMAT);
   sampleTimer->attachInterrupt(sampleISR);
   sampleTimer->resume();
+
+  // Initialize the thread to scan keys and set the currentStepSize
+  TaskHandle_t scanKeysHandle = NULL;
+  xTaskCreate(
+    scanKeysTask,
+    "scanKeys",
+    64,
+    NULL,
+    2,
+    &scanKeysHandle
+  );
+
+    // Initialize the thread to scan keys and set the currentStepSize
+  TaskHandle_t displayUpdateHandle = NULL;
+  xTaskCreate(
+    displayUpdateTask,
+    "displayUpdate",
+    256,
+    NULL,
+    1,
+    &scanKeysHandle
+  );
+
+  // Start the RTOS scheduler to run the threads
+  vTaskStartScheduler();
 }
-
-
 
 void loop() {
   // put your main code here, to run repeatedly:
-  static uint32_t next = millis();
-  static uint32_t count = 0;
-
-  if (millis() > next) {
-    next += interval;
-
-    //Update display
-    u8g2.clearBuffer();         // clear the internal memory
-    u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
-    // a. Text
-    u8g2.drawStr(2,10,"Hello World!");  // write something to the internal memory
-    // b. Number
-    uint8_t keyArray[7];
-    for (int i=0 ; i<=2 ; i++) {
-      // Select the row in the matrix we want to read from
-      setRow(i);
-      // Small delay for parasitic capacitance
-      delayMicroseconds(3);
-      keyArray[i] = readCols();
-    }
-    
-    uint32_t value = keyArray[0] + (keyArray[1] << 4) + (keyArray[2] << 8);
-    u8g2.setCursor(2,20);
-    u8g2.print(value,HEX);
-    const char* key = setCurrentStepSizeAndGetKey(keyArray);
-    u8g2.drawStr(2,30, key); 
-    //Send to the display
-    u8g2.sendBuffer();          // transfer internal memory to the display
-
-    //Toggle LED
-    digitalToggle(LED_BUILTIN);
-  }
+  // EMPTY as we are using threads
 }
