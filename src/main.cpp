@@ -196,8 +196,11 @@ const char* getCurrentKey() {
 // Global variable for rotation of Knob 3
 volatile Knob knob3 = Knob(3, 0, 0, 16);
 
-// Global variable for rotation of Knob 3
+// Global variable for rotation of Knob 2
 volatile Knob knob2 = Knob(3, 2, 0, 16);
+
+// Global variable for rotation of Knob 2
+volatile Knob knob1 = Knob(4, 0, 0, 5);
 
 // ========================  INTERRUPTS & THREADS  ===========================
 
@@ -232,7 +235,7 @@ void scanKeysTask(void * pvParameters) {
   // Body of the thread (i.e. what it does)
   while(1){
     // Perform reading of the key matrix
-    for (int i=0 ; i<=3 ; i++) {
+    for (int i=0 ; i<=7 ; i++) {
       // Select the row in the matrix we want to read from
       setRow(i);
       // Small delay for parasitic capacitance between setRow and readCols
@@ -251,6 +254,7 @@ void scanKeysTask(void * pvParameters) {
     // Set the current rotation of knob 3, according to the key matrix
     knob3.setCurrentRotation();
     knob2.setCurrentRotation();
+    knob1.setCurrentRotation();
 
     // Check for unsent updates and write to the CAN bus
     for (int i=0; i<=2; i++) {
@@ -328,7 +332,10 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.print(knob3.getRotation()); 
 
     u8g2.setCursor(70,30);
-    u8g2.print(knob2.getRotation()); 
+    u8g2.print(knob2.getRotation());
+
+    u8g2.setCursor(50,30);
+    u8g2.print(knob1.getRotation()); 
 
     uint32_t ID;
     uint8_t RX_Message[8]={0};
