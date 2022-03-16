@@ -148,9 +148,13 @@ void setCurrentStepSize() {
   int32_t localCurrentStepSize = 0;
   // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
   for (int i=0 ; i <= 2 ; i++) {
+    uint8_t keyArrayI;
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      memcpy(&keyArrayI, (void*) &keyArray[i], sizeof(keyArray[i]));
+    xSemaphoreGive(keyArrayMutex);
     // Iterate through the last 4 bits of the row's value, checking each time if it is zero
     for (int j=0 ; j <= 3 ; j++) {
-        bool isSelected = !(((keyArray[i] >> j)) & 0x01);
+        bool isSelected = !(((keyArrayI >> j)) & 0x01);
         // If it is zero, then the key is being pressed
         if (isSelected) {
           localCurrentStepSize = stepSizes[i*4+j];
@@ -166,9 +170,13 @@ const char* getCurrentKey() {
   const char* currentKey = "";
   // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
   for (int i=0 ; i <= 2 ; i++) {
+    uint8_t keyArrayI;
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      memcpy(&keyArrayI, (void*) &keyArray[i], sizeof(keyArray[i]));
+    xSemaphoreGive(keyArrayMutex);
     // Iterate through the last 4 bits of the row's value, checking each time if it is zero
     for (int j=0 ; j <= 3 ; j++) {
-        bool isSelected = !(((keyArray[i] >> j)) & 0x01);
+        bool isSelected = !(((keyArrayI >> j)) & 0x01);
         // If it is zero, then the key is being pressed
         if (isSelected) {
           currentKey = keysList[i*4+j];
@@ -176,6 +184,101 @@ const char* getCurrentKey() {
     }
   }
   return currentKey;
+}
+
+volatile int knob3Rotation = 0;
+
+int decodeRotationStateChange(u_int8_t prevState, u_int8_t currentState) {
+  int rotationChange = 0;
+  if(prevState == 0b00){
+    // Regular state changes
+    if (currentState == 0b01) {
+      rotationChange = -1;
+    } else if (currentState == 0b10) {
+      rotationChange = +1;
+    }
+    // Skip state changes
+    else if (currentState == 0b11) {
+      rotationChange = -2;
+    }   
+  } else if (prevState == 0b01) {
+    // Regular state changes
+    if(currentState == 0b00){
+      rotationChange = +1;
+    } else if (currentState == 0b11) {
+      rotationChange = -1; 
+    }
+    // Skip state changes
+    else if (currentState == 0b10) {
+      rotationChange = -2;
+    }   
+  } else if (prevState == 0b10) {
+    // Regular state changes
+    if(currentState == 0b00){
+        rotationChange = -1;
+    } else if (currentState == 0b11) {
+        rotationChange = +1; 
+    }
+    // Skip state changes
+    else if (currentState == 0b01) {
+      rotationChange = -2;
+    }   
+  } else if (prevState == 0b11) {
+    // Regular state changes
+    if (currentState == 0b01) {
+      rotationChange = +1;
+    } else if (currentState == 0b10) {
+      rotationChange = -1;
+    }   
+    // Skip state changes
+    else if (currentState == 0b00) {
+      rotationChange = -2;
+    }   
+  }
+  return rotationChange;
+}
+
+/// Analyse the output of the keymatrix read and compute the rotation of the knob
+u_int8_t setCurrentKnob3Rotation(u_int8_t prevRotationState) {
+
+  // Define local variables
+  u_int8_t currentRotationState = 0b00;
+  xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+    int localRotation = knob3Rotation;
+  xSemaphoreGive(keyArrayMutex);
+
+  // Get the 4rth byte of keyArray (where the data about the piano key presses is)
+  uint8_t keyArray3;
+  xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+    memcpy(&keyArray3, (void*) &keyArray[3], sizeof(keyArray[3]));
+  xSemaphoreGive(keyArrayMutex);
+
+  // Iterate through the last 2 bits of the row's value to get the currentRotationState
+  // Stored as {A,B}, so reverse from lab notes
+  for (int j=0 ; j <= 1 ; j++) {
+      int keyArrayValue = ((keyArray3 >> j) & 0x01) ? 0b1 : 0b0;
+      currentRotationState = (currentRotationState << 1) + keyArrayValue;
+  }
+
+  if(currentRotationState != prevRotationState) {
+    // Compute the new roation based on previous rotation + rotation change
+    localRotation = localRotation + decodeRotationStateChange(prevRotationState, currentRotationState);
+    Serial.println("setCurrentKnob3Rotation --");
+    Serial.print("\tprevRotationState: (int) ");
+    Serial.println(prevRotationState);
+    Serial.print("\tcurrentRotationState: ");
+    Serial.print((keyArray3 & 0x01) ? 0b1 : 0b0);
+    Serial.println(((keyArray3 >> 1) & 0x01) ? 0b1 : 0b0);
+    Serial.print("\tlocalRotation: ");
+    Serial.println(localRotation);
+  }
+
+  // Set the new rotation value
+  xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+    knob3Rotation = localRotation;
+  xSemaphoreGive(keyArrayMutex);
+  // Return the current rotation state for next iteration
+  return currentRotationState;
 }
 
 // ========================  INTERRUPTS & THREADS  ===========================
@@ -196,12 +299,14 @@ void sampleISR() {
 // THREAD: Scan the keys and set the currentStepSize
 void scanKeysTask(void * pvParameters) {
   // Define parameters for how to run the thread
-  const TickType_t xFrequency = 50/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
+  const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
 
+  u_int8_t prevRotationState = 0b00;
   // Body of the thread (i.e. what it does)
   while(1){
-    for (int i=0 ; i<=2 ; i++) {
+    // Perform reading of the key matrix
+    for (int i=0 ; i<=3 ; i++) {
       // Select the row in the matrix we want to read from
       setRow(i);
       // Small delay for parasitic capacitance between setRow and readCols
@@ -211,11 +316,14 @@ void scanKeysTask(void * pvParameters) {
       uint8_t keyArrayI = readCols();
       // Store it in the mutex with a mememory copy
       xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      // "assignment" of keyArray[i] using memcpy
-      memcpy((void*) &keyArray[i], &keyArrayI, sizeof(keyArrayI));
+        // "assignment" of keyArray[i] using memcpy
+        memcpy((void*) &keyArray[i], &keyArrayI, sizeof(keyArrayI));
       xSemaphoreGive(keyArrayMutex);
     }
+    // Set the current stepSize, according to the key matrix
     setCurrentStepSize();
+    // Set the current rotation of knob 3, according to the key matrix
+    prevRotationState = setCurrentKnob3Rotation(prevRotationState);
 
     // Delay the next execution until new initiation according to xFrequency
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -259,6 +367,13 @@ void displayUpdateTask(void * pvParameters) {
     // c. Print the key to the screen
     const char* key = getCurrentKey();
     u8g2.drawStr(2,30, key); 
+
+    // d. Print the knob rotation to the screen
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      const int rotationLocal = knob3Rotation;
+    xSemaphoreGive(keyArrayMutex);
+    u8g2.setCursor(50,30);
+    u8g2.print(rotationLocal); 
 
     //Send to the display
     u8g2.sendBuffer();          // transfer internal memory to the display
