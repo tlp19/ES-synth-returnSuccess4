@@ -189,7 +189,7 @@ const char* getCurrentKey() {
 // Global variable for rotation of Knob 3
 volatile int knob3Rotation = 8;
 
-int decodeRotationStateChange(u_int8_t prevState, u_int8_t currentState) {
+int decodeRotationStateChange(uint8_t prevState, uint8_t currentState) {
   int rotationChange = 0;
   if(prevState == 0b00){
     // Regular state changes
@@ -240,13 +240,11 @@ int decodeRotationStateChange(u_int8_t prevState, u_int8_t currentState) {
 }
 
 /// Analyse the output of the keymatrix read and compute the rotation of the knob
-u_int8_t setCurrentKnob3Rotation(u_int8_t prevRotationState) {
+uint8_t setCurrentKnob3Rotation(u_int8_t prevRotationState) {
 
   // Define local variables
-  u_int8_t currentRotationState = 0b00;
-  xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-    int localRotation = knob3Rotation;
-  xSemaphoreGive(keyArrayMutex);
+  uint8_t currentRotationState = 0b00;
+  int localRotation = knob3Rotation;
 
   // Get the 4rth byte of keyArray (where the data about the piano key presses is)
   uint8_t keyArray3;
@@ -278,10 +276,8 @@ u_int8_t setCurrentKnob3Rotation(u_int8_t prevRotationState) {
     Serial.print("\tlocalRotation: ");
     Serial.println(localRotation);
 
-      // Set the new rotation value
-    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      knob3Rotation = localRotation;
-    xSemaphoreGive(keyArrayMutex);
+    // Set the new rotation value using atomic store
+    __atomic_store_n(&knob3Rotation, localRotation, __ATOMIC_RELAXED);
   }
   // Return the current rotation state for next iteration
   return currentRotationState;
@@ -311,7 +307,7 @@ void scanKeysTask(void * pvParameters) {
   const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
 
-  u_int8_t prevRotationState = 0b00;
+  uint8_t prevRotationState = 0b00;
   // Body of the thread (i.e. what it does)
   while(1){
     // Perform reading of the key matrix
@@ -377,12 +373,9 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.drawStr(30,20, key); 
 
     // d. Print the knob rotation to the screen
-    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      const int rotationLocal = knob3Rotation;
-    xSemaphoreGive(keyArrayMutex);
     u8g2.drawStr(90,30, "Vol:"); 
     u8g2.setCursor(116,30);
-    u8g2.print(rotationLocal); 
+    u8g2.print(knob3Rotation); 
 
     //Send to the display
     u8g2.sendBuffer();          // transfer internal memory to the display
