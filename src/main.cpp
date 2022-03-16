@@ -2,6 +2,7 @@
 #include <U8g2lib.h>
 #include <STM32FreeRTOS.h>
 #include <math.h>
+#include "knob.hpp"
 
 //Constants
   const uint32_t interval = 100; //Display update interval
@@ -186,102 +187,13 @@ const char* getCurrentKey() {
   return currentKey;
 }
 
+
+
 // Global variable for rotation of Knob 3
-volatile int knob3Rotation = 8;
+volatile Knob knob3 = Knob(3, 0, 0, 16);
 
-int decodeRotationStateChange(uint8_t prevState, uint8_t currentState) {
-  int rotationChange = 0;
-  if(prevState == 0b00){
-    // Regular state changes
-    if (currentState == 0b01) {
-      rotationChange = -1;
-    } else if (currentState == 0b10) {
-      rotationChange = +1;
-    }
-    // Skip state changes
-    else if (currentState == 0b11) {
-      rotationChange = -2;
-    }   
-  } else if (prevState == 0b01) {
-    // Regular state changes
-    if(currentState == 0b00){
-      rotationChange = +1;
-    } else if (currentState == 0b11) {
-      rotationChange = -1; 
-    }
-    // Skip state changes
-    else if (currentState == 0b10) {
-      rotationChange = -2;
-    }   
-  } else if (prevState == 0b10) {
-    // Regular state changes
-    if(currentState == 0b00){
-        rotationChange = -1;
-    } else if (currentState == 0b11) {
-        rotationChange = +1; 
-    }
-    // Skip state changes
-    else if (currentState == 0b01) {
-      rotationChange = -2;
-    }   
-  } else if (prevState == 0b11) {
-    // Regular state changes
-    if (currentState == 0b01) {
-      rotationChange = +1;
-    } else if (currentState == 0b10) {
-      rotationChange = -1;
-    }   
-    // Skip state changes
-    else if (currentState == 0b00) {
-      rotationChange = -2;
-    }   
-  }
-  return rotationChange;
-}
-
-/// Analyse the output of the keymatrix read and compute the rotation of the knob
-uint8_t setCurrentKnob3Rotation(u_int8_t prevRotationState) {
-
-  // Define local variables
-  uint8_t currentRotationState = 0b00;
-  int localRotation = knob3Rotation;
-
-  // Get the 4rth byte of keyArray (where the data about the piano key presses is)
-  uint8_t keyArray3;
-  xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-    memcpy(&keyArray3, (void*) &keyArray[3], sizeof(keyArray[3]));
-  xSemaphoreGive(keyArrayMutex);
-
-  // Iterate through the last 2 bits of the row's value to get the currentRotationState
-  // Stored as {A,B}, so reverse from lab notes
-  for (int j=0 ; j <= 1 ; j++) {
-      int keyArrayValue = ((keyArray3 >> j) & 0x01) ? 0b1 : 0b0;
-      currentRotationState = (currentRotationState << 1) + keyArrayValue;
-  }
-
-  if(currentRotationState != prevRotationState) {
-    // Compute the new roation based on previous rotation + rotation change
-    localRotation = localRotation + decodeRotationStateChange(prevRotationState, currentRotationState);
-    if(localRotation < 0) {
-      localRotation = 0;
-    } else if(localRotation > 16){
-      localRotation = 16;
-    }
-    Serial.println("setCurrentKnob3Rotation --");
-    Serial.print("\tprevRotationState: (int) ");
-    Serial.println(prevRotationState);
-    Serial.print("\tcurrentRotationState: ");
-    Serial.print((keyArray3 & 0x01) ? 0b1 : 0b0);
-    Serial.println(((keyArray3 >> 1) & 0x01) ? 0b1 : 0b0);
-    Serial.print("\tlocalRotation: ");
-    Serial.println(localRotation);
-
-    // Set the new rotation value using atomic store
-    __atomic_store_n(&knob3Rotation, localRotation, __ATOMIC_RELAXED);
-  }
-  // Return the current rotation state for next iteration
-  return currentRotationState;
-}
+// Global variable for rotation of Knob 3
+volatile Knob knob2 = Knob(3, 2, 0, 16);
 
 // ========================  INTERRUPTS & THREADS  ===========================
 
@@ -295,7 +207,7 @@ void sampleISR() {
   phaseAcc += currentStepSize;
   int32_t Vout = phaseAcc >> 24;
   // Adjust the volume based on the volume controller
-  Vout = Vout >> (8 - knob3Rotation/2);
+  Vout = Vout >> (8 - knob3.getRotation()/2);
   analogWrite(OUTR_PIN, Vout + 128);
 }
 
@@ -328,7 +240,8 @@ void scanKeysTask(void * pvParameters) {
     // Set the current stepSize, according to the key matrix
     setCurrentStepSize();
     // Set the current rotation of knob 3, according to the key matrix
-    prevRotationState = setCurrentKnob3Rotation(prevRotationState);
+    knob3.setCurrentRotation();
+    knob2.setCurrentRotation();
 
     // Delay the next execution until new initiation according to xFrequency
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -345,7 +258,7 @@ void displayUpdateTask(void * pvParameters) {
   while(1){
     //Update display
     u8g2.clearBuffer();         // clear the internal memory
-    u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
+    u8g2.setFont(u8g2_font_profont12_tf); // choose a suitable font
 
     // Use a Mutex to safely access keyArray: make local copies of relevant data to minimize locking time
     // copy keyArray[i] into a local variable to only lock mutex during copy operation
@@ -375,7 +288,10 @@ void displayUpdateTask(void * pvParameters) {
     // d. Print the knob rotation to the screen
     u8g2.drawStr(90,30, "Vol:"); 
     u8g2.setCursor(116,30);
-    u8g2.print(knob3Rotation); 
+    u8g2.print(knob3.getRotation()); 
+
+    u8g2.setCursor(2,30);
+    u8g2.print(knob2.getRotation()); 
 
     //Send to the display
     u8g2.sendBuffer();          // transfer internal memory to the display
