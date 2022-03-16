@@ -146,6 +146,9 @@ volatile uint8_t keyArray[7];
 // Initialise the array with all unpressed
 volatile uint8_t keyArray_prev[7] = {1,1,1,1,1,1,1};
 
+// queue handler
+QueueHandle_t msgInQ;
+
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
   int32_t localCurrentStepSize = 0;
@@ -179,6 +182,13 @@ const char* getCurrentKey() {
     }
   }
   return currentKey;
+}
+
+
+void CAN_RX_ISR (void) {
+  uint8_t RX_Message_ISR[8];
+  uint32_t ID;
+  CAN_RX(ID, RX_Message_ISR); xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
 }
 
 // ========================  INTERRUPTS & THREADS  ===========================
@@ -248,6 +258,15 @@ void scanKeysTask(void * pvParameters) {
   }
 }
 
+/*
+// THREAD: decode thread to process messages on the queue
+void decodeTask(void * pvParameters){
+  
+  xQueueReceive(msgInQ, RX_Message, portMAX_DELAY);
+}
+*/
+
+
 // THREAD: Update the display on the device
 void displayUpdateTask(void * pvParameters) {
   // Define parameters for how to run the thread
@@ -272,11 +291,20 @@ void displayUpdateTask(void * pvParameters) {
     const char* key = getCurrentKey();
     u8g2.drawStr(2,30, key); 
 
+
     // Read incoming messages
-    uint32_t ID = 0;
+    uint32_t ID;
     uint8_t RX_Message[8]={0};
-    while (CAN_CheckRXLevel())
+
+    while (CAN_CheckRXLevel()){
       CAN_RX(ID, RX_Message);
+    }
+
+    // Display CAN Bus
+    u8g2.setCursor(66,30);
+    u8g2.print((char) RX_Message[0]);
+    u8g2.print(RX_Message[1]);
+    u8g2.print(RX_Message[2]);
 
     //Send to the display
     u8g2.sendBuffer();          // transfer internal memory to the display
@@ -288,7 +316,6 @@ void displayUpdateTask(void * pvParameters) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
   }
 }
-
 
 /// =========================== ARDUINO SETUP & LOOP ===================================
 
@@ -363,7 +390,14 @@ void setup() {
 
   CAN_Init(true);
   setCANFilter(0x123,0x7ff);
+  CAN_RegisterRX_ISR(CAN_RX_ISR);
   CAN_Start();
+
+
+  // initialize Queue Handler 
+  msgInQ = xQueueCreate(36,8);
+
+
 
   // Start the RTOS scheduler to run the threads
   vTaskStartScheduler();
