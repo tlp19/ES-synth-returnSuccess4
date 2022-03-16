@@ -141,6 +141,7 @@ volatile char* currentKey;
 
 // Reading from the keyboard
 volatile uint8_t keyArray[7];
+SemaphoreHandle_t keyArrayMutex;
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
@@ -203,9 +204,16 @@ void scanKeysTask(void * pvParameters) {
     for (int i=0 ; i<=2 ; i++) {
       // Select the row in the matrix we want to read from
       setRow(i);
-      // Small delay for parasitic capacitance
+      // Small delay for parasitic capacitance between setRow and readCols
       delayMicroseconds(3);
-      keyArray[i] = readCols();
+
+      // Compute function in a local variable to minimize Mutex locking time
+      uint8_t keyArrayI = readCols();
+      // Store it in the mutex with a mememory copy
+      xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      // "assignment" of keyArray[i] using memcpy
+      memcpy((void*) &keyArray[i], &keyArrayI, sizeof(keyArrayI));
+      xSemaphoreGive(keyArrayMutex);
     }
     setCurrentStepSize();
 
@@ -229,8 +237,22 @@ void displayUpdateTask(void * pvParameters) {
     // a. Text
     u8g2.drawStr(2,10,"Hello World!");  // write something to the internal memory
 
+    // Use a Mutex to safely access keyArray: make local copies of relevant data to minimize locking time
+    // copy keyArray[i] into a local variable to only lock mutex during copy operation
+    uint8_t keyArray0, keyArray1, keyArray2;
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      memcpy(&keyArray0, (void*) &keyArray[0], sizeof(keyArray[0]));
+    xSemaphoreGive(keyArrayMutex);
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      memcpy(&keyArray1, (void*) &keyArray[1], sizeof(keyArray[1]));
+    xSemaphoreGive(keyArrayMutex);
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      memcpy(&keyArray2, (void*) &keyArray[2], sizeof(keyArray[0]));
+    xSemaphoreGive(keyArrayMutex);
+
+    uint32_t value = keyArray0 + (keyArray1 << 4) + (keyArray2 << 8);
+    
     // b. Print the keyArray as a hexadecimal number
-    uint32_t value = keyArray[0] + (keyArray[1] << 4) + (keyArray[2] << 8);
     u8g2.setCursor(2,20);
     u8g2.print(value,HEX);
 
@@ -289,6 +311,11 @@ void setup() {
     Serial.print("]: ");
     Serial.println(stepSizes[i]);
   }
+
+  // ------ INITIALIZE COMMON RESSOURCES -----
+
+  // Mutex to access safely the global keyArray variable
+  keyArrayMutex = xSemaphoreCreateMutex();
 
   // ---- INITIALIZE INTERRUPTS AND THREADS: ----
 
