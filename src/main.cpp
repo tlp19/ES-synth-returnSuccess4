@@ -2,6 +2,7 @@
 #include <U8g2lib.h>
 #include <STM32FreeRTOS.h>
 #include <math.h>
+#include<ES_CAN.h>
 
 //Constants
   const uint32_t interval = 100; //Display update interval
@@ -142,6 +143,12 @@ volatile char* currentKey;
 // Reading from the keyboard
 volatile uint8_t keyArray[7];
 
+// Initialise the array with all unpressed
+volatile uint8_t keyArray_prev[7] = {1,1,1,1,1,1,1};
+
+// CAN Bus transmissable message
+volatile uint8_t TX_Message[8]= {0};
+
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
   int32_t localCurrentStepSize = 0;
@@ -209,6 +216,32 @@ void scanKeysTask(void * pvParameters) {
     }
     setCurrentStepSize();
 
+    // Check for unsent updates and write to the CAN bus
+    for (int i=0; i<=2; i++) {
+      // Check for any changes that need to be sent on CAN
+      if(keyArray[i] != keyArray_prev[i]) {
+        for (int j=0 ; j <= 3 ; j++) {
+          bool key_now = (((keyArray[i] >> j)) & 0x01);
+          bool key_prev = (((keyArray_prev[i] >> j)) & 0x01);
+          if(key_now != key_prev) {
+            // This is the bit that is different
+            if(key_now) {
+              // Key is released
+              TX_Message[0] = 'R';
+            } else {
+              // Key is pressed
+              TX_Message[0] = 'P';
+            }
+            // Update the key index
+            TX_Message[2] = i*4+j;
+            // Register that the change has been sent
+            keyArray_prev[i] ^= 1 << j;
+            CAN_TX(0x123, TX_Message);
+          }
+        }
+      }
+    } 
+
     // Delay the next execution until new initiation according to xFrequency
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
   }
@@ -237,6 +270,12 @@ void displayUpdateTask(void * pvParameters) {
     // c. Print the key to the screen
     const char* key = getCurrentKey();
     u8g2.drawStr(2,30, key); 
+
+    // Debug code for CAN Bus
+    u8g2.setCursor(66,30);
+    u8g2.print((char) TX_Message[0]);
+    u8g2.print(TX_Message[1]);
+    u8g2.print(TX_Message[2]);
 
     //Send to the display
     u8g2.sendBuffer();          // transfer internal memory to the display
@@ -323,6 +362,8 @@ void setup() {
 
   // Start the RTOS scheduler to run the threads
   vTaskStartScheduler();
+
+  TX_Message[1] = 4;
 }
 
 void loop() {
