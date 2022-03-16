@@ -361,6 +361,10 @@ void setup() {
     &scanKeysHandle
   );
 
+  CAN_Init(true);
+  setCANFilter(0x123,0x7ff);
+  CAN_Start();
+
   // Start the RTOS scheduler to run the threads
   vTaskStartScheduler();
 }
