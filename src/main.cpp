@@ -167,7 +167,7 @@ void setCurrentStepSize() {
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 const char* getCurrentKey() {
-  const char* currentKey = "";
+  const char* currentKey = "-";
   // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
   for (int i=0 ; i <= 2 ; i++) {
     uint8_t keyArrayI;
@@ -186,7 +186,8 @@ const char* getCurrentKey() {
   return currentKey;
 }
 
-volatile int knob3Rotation = 0;
+// Global variable for rotation of Knob 3
+volatile int knob3Rotation = 8;
 
 int decodeRotationStateChange(u_int8_t prevState, u_int8_t currentState) {
   int rotationChange = 0;
@@ -263,6 +264,11 @@ u_int8_t setCurrentKnob3Rotation(u_int8_t prevRotationState) {
   if(currentRotationState != prevRotationState) {
     // Compute the new roation based on previous rotation + rotation change
     localRotation = localRotation + decodeRotationStateChange(prevRotationState, currentRotationState);
+    if(localRotation < 0) {
+      localRotation = 0;
+    } else if(localRotation > 16){
+      localRotation = 16;
+    }
     Serial.println("setCurrentKnob3Rotation --");
     Serial.print("\tprevRotationState: (int) ");
     Serial.println(prevRotationState);
@@ -271,12 +277,12 @@ u_int8_t setCurrentKnob3Rotation(u_int8_t prevRotationState) {
     Serial.println(((keyArray3 >> 1) & 0x01) ? 0b1 : 0b0);
     Serial.print("\tlocalRotation: ");
     Serial.println(localRotation);
-  }
 
-  // Set the new rotation value
-  xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-    knob3Rotation = localRotation;
-  xSemaphoreGive(keyArrayMutex);
+      // Set the new rotation value
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      knob3Rotation = localRotation;
+    xSemaphoreGive(keyArrayMutex);
+  }
   // Return the current rotation state for next iteration
   return currentRotationState;
 }
@@ -288,9 +294,12 @@ u_int8_t setCurrentKnob3Rotation(u_int8_t prevRotationState) {
 
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
+  // Build a sawtooth waveform
   static int32_t phaseAcc = 0;
   phaseAcc += currentStepSize;
   int32_t Vout = phaseAcc >> 24;
+  // Adjust the volume based on the volume controller
+  Vout = Vout >> (8 - knob3Rotation/2);
   analogWrite(OUTR_PIN, Vout + 128);
 }
 
@@ -342,9 +351,6 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.clearBuffer();         // clear the internal memory
     u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
 
-    // a. Text
-    u8g2.drawStr(2,10,"Hello World!");  // write something to the internal memory
-
     // Use a Mutex to safely access keyArray: make local copies of relevant data to minimize locking time
     // copy keyArray[i] into a local variable to only lock mutex during copy operation
     uint8_t keyArray0, keyArray1, keyArray2;
@@ -361,18 +367,21 @@ void displayUpdateTask(void * pvParameters) {
     uint32_t value = keyArray0 + (keyArray1 << 4) + (keyArray2 << 8);
     
     // b. Print the keyArray as a hexadecimal number
-    u8g2.setCursor(2,20);
+    u8g2.drawStr(2,10, "KeyArray:"); 
+    u8g2.setCursor(60,10);
     u8g2.print(value,HEX);
 
     // c. Print the key to the screen
+    u8g2.drawStr(2,20, "Key:"); 
     const char* key = getCurrentKey();
-    u8g2.drawStr(2,30, key); 
+    u8g2.drawStr(30,20, key); 
 
     // d. Print the knob rotation to the screen
     xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
       const int rotationLocal = knob3Rotation;
     xSemaphoreGive(keyArrayMutex);
-    u8g2.setCursor(50,30);
+    u8g2.drawStr(90,30, "Vol:"); 
+    u8g2.setCursor(116,30);
     u8g2.print(rotationLocal); 
 
     //Send to the display
