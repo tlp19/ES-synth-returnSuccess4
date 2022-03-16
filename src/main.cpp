@@ -146,9 +146,6 @@ volatile uint8_t keyArray[7];
 // Initialise the array with all unpressed
 volatile uint8_t keyArray_prev[7] = {1,1,1,1,1,1,1};
 
-// CAN Bus transmissable message
-volatile uint8_t TX_Message[8]= {0};
-
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
   int32_t localCurrentStepSize = 0;
@@ -201,9 +198,13 @@ void sampleISR() {
 
 // THREAD: Scan the keys and set the currentStepSize
 void scanKeysTask(void * pvParameters) {
+
   // Define parameters for how to run the thread
   const TickType_t xFrequency = 50/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
+
+  uint8_t TX_Message[8]= {0};
+  TX_Message[1] = 4;
 
   // Body of the thread (i.e. what it does)
   while(1){
@@ -271,11 +272,11 @@ void displayUpdateTask(void * pvParameters) {
     const char* key = getCurrentKey();
     u8g2.drawStr(2,30, key); 
 
-    // Debug code for CAN Bus
-    u8g2.setCursor(66,30);
-    u8g2.print((char) TX_Message[0]);
-    u8g2.print(TX_Message[1]);
-    u8g2.print(TX_Message[2]);
+    // Read incoming messages
+    uint32_t ID = 0;
+    uint8_t RX_Message[8]={0};
+    while (CAN_CheckRXLevel())
+      CAN_RX(ID, RX_Message);
 
     //Send to the display
     u8g2.sendBuffer();          // transfer internal memory to the display
@@ -362,8 +363,6 @@ void setup() {
 
   // Start the RTOS scheduler to run the threads
   vTaskStartScheduler();
-
-  TX_Message[1] = 4;
 }
 
 void loop() {
