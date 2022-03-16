@@ -290,7 +290,7 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.setCursor(116,30);
     u8g2.print(knob3.getRotation()); 
 
-    u8g2.setCursor(2,30);
+    u8g2.setCursor(70,30);
     u8g2.print(knob2.getRotation()); 
 
     //Send to the display
