@@ -146,9 +146,6 @@ volatile uint8_t keyArray[7];
 // Initialise the array with all unpressed
 volatile uint8_t keyArray_prev[7] = {1,1,1,1,1,1,1};
 
-// queue handler
-QueueHandle_t msgInQ;
-
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
   int32_t localCurrentStepSize = 0;
@@ -184,13 +181,6 @@ const char* getCurrentKey() {
   return currentKey;
 }
 
-
-void CAN_RX_ISR (void) {
-  uint8_t RX_Message_ISR[8];
-  uint32_t ID;
-  CAN_RX(ID, RX_Message_ISR); xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
-}
-
 // ========================  INTERRUPTS & THREADS  ===========================
 
 
@@ -209,12 +199,13 @@ void sampleISR() {
 // THREAD: Scan the keys and set the currentStepSize
 void scanKeysTask(void * pvParameters) {
 
+  // CAN Bus transmissable message
+  uint8_t TX_Message[8]= {0};
+  TX_Message[1] = 4;
+
   // Define parameters for how to run the thread
   const TickType_t xFrequency = 50/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
-
-  uint8_t TX_Message[8]= {0};
-  TX_Message[1] = 4;
 
   // Body of the thread (i.e. what it does)
   while(1){
@@ -247,25 +238,18 @@ void scanKeysTask(void * pvParameters) {
             TX_Message[2] = i*4+j;
             // Register that the change has been sent
             keyArray_prev[i] ^= 1 << j;
-            CAN_TX(0x123, TX_Message);
           }
         }
       }
     } 
 
+    // send the message over the bus using the CAN
+    CAN_TX(0x123, TX_Message);
+
     // Delay the next execution until new initiation according to xFrequency
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
   }
 }
-
-/*
-// THREAD: decode thread to process messages on the queue
-void decodeTask(void * pvParameters){
-  
-  xQueueReceive(msgInQ, RX_Message, portMAX_DELAY);
-}
-*/
-
 
 // THREAD: Update the display on the device
 void displayUpdateTask(void * pvParameters) {
@@ -291,16 +275,14 @@ void displayUpdateTask(void * pvParameters) {
     const char* key = getCurrentKey();
     u8g2.drawStr(2,30, key); 
 
-
-    // Read incoming messages
     uint32_t ID;
     uint8_t RX_Message[8]={0};
 
-    while (CAN_CheckRXLevel()){
-      CAN_RX(ID, RX_Message);
-    }
+    // Poll for received messages
+    while (CAN_CheckRXLevel())
+          CAN_RX(ID, RX_Message);
 
-    // Display CAN Bus
+    // Debug code for CAN Bus
     u8g2.setCursor(66,30);
     u8g2.print((char) RX_Message[0]);
     u8g2.print(RX_Message[1]);
@@ -316,6 +298,7 @@ void displayUpdateTask(void * pvParameters) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
   }
 }
+
 
 /// =========================== ARDUINO SETUP & LOOP ===================================
 
@@ -388,19 +371,15 @@ void setup() {
     &scanKeysHandle
   );
 
+  // Initialise CAN bus
   CAN_Init(true);
   setCANFilter(0x123,0x7ff);
-  CAN_RegisterRX_ISR(CAN_RX_ISR);
   CAN_Start();
-
-
-  // initialize Queue Handler 
-  msgInQ = xQueueCreate(36,8);
-
-
 
   // Start the RTOS scheduler to run the threads
   vTaskStartScheduler();
+
+  
 }
 
 void loop() {
