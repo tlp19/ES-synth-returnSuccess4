@@ -235,7 +235,7 @@ void scanKeysTask(void * pvParameters) {
   // Body of the thread (i.e. what it does)
   while(1){
     // Perform reading of the key matrix
-    for (int i=0 ; i<=7 ; i++) {
+    for (int i=0 ; i<=6 ; i++) {
       // Select the row in the matrix we want to read from
       setRow(i);
       // Small delay for parasitic capacitance between setRow and readCols
