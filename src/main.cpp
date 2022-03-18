@@ -49,12 +49,6 @@
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
 
-// CAN Bus Message Queue
-QueueHandle_t msgInQ;
-
-// Global Message variable (temporary, changed to Mutex later)
-uint8_t RX_Message[8]={0};
-
 //Function to set outputs using key matrix
 void setOutMuxBit(const uint8_t bitIdx, const bool value) {
       digitalWrite(REN_PIN,LOW);
@@ -173,14 +167,19 @@ volatile uint8_t keyArray[7];
 // Initialise the array with all unpressed
 volatile uint8_t keyArray_prev[3] = {1,1,1};
 
-// Global variable for rotation of Knob 3
+// Global object for Knob 3
 volatile Knob knob3 = Knob(knob3Row, knob3FCol, 0, 16);
-
-// Global variable for rotation of Knob 2
+// Global object for Knob 2
 volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9);
-
-// Global variable for rotation of Knob 2
+// Global object for Knob 1
 volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
+
+// CAN Bus Message Receive Queue
+QueueHandle_t msgInQ;
+// Mutex to protect shared ressources
+SemaphoreHandle_t RX_MessageMutex;
+// Global Message variable
+volatile uint8_t RX_Message[8] = {0};
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
@@ -225,7 +224,7 @@ void setCurrentStepSize() {
           keyArray_prevI ^= 1 << j;
           // Update the global keyArray_prev
           xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-            // "assignment" of keyArray[i] using memcpy
+            // "assignment" of keyArray_prev[i] using memcpy
             memcpy((void*) &keyArray_prev[i], &keyArray_prevI, sizeof(keyArray_prevI));
           xSemaphoreGive(keyArrayMutex);
         }
@@ -334,23 +333,21 @@ void displayUpdateTask(void * pvParameters) {
     //Update display
     u8g2.clearBuffer();         // clear the internal memory
     u8g2.setFont(u8g2_font_profont12_tf); // choose a suitable font
-
-    // Use a Mutex to safely access keyArray: make local copies of relevant data to minimize locking time
-    // copy keyArray[i] into a local variable to only lock mutex during copy operation
-    uint8_t keyArray0, keyArray1, keyArray2;
-    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      memcpy(&keyArray0, (void*) &keyArray[0], sizeof(keyArray[0]));
-    xSemaphoreGive(keyArrayMutex);
-    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      memcpy(&keyArray1, (void*) &keyArray[1], sizeof(keyArray[1]));
-    xSemaphoreGive(keyArrayMutex);
-    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      memcpy(&keyArray2, (void*) &keyArray[2], sizeof(keyArray[0]));
-    xSemaphoreGive(keyArrayMutex);
-
-    uint32_t value = keyArray0 + (keyArray1 << 4) + (keyArray2 << 8);
     
     // b. Print the keyArray as a hexadecimal number
+    // Use a Mutex to safely access keyArray: make local copies of relevant data to minimize locking time
+    // copy keyArray[i] into a local variable to only lock mutex during copy operation
+    // uint8_t keyArray0, keyArray1, keyArray2;
+    // xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+    //   memcpy(&keyArray0, (void*) &keyArray[0], sizeof(keyArray[0]));
+    // xSemaphoreGive(keyArrayMutex);
+    // xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+    //   memcpy(&keyArray1, (void*) &keyArray[1], sizeof(keyArray[1]));
+    // xSemaphoreGive(keyArrayMutex);
+    // xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+    //   memcpy(&keyArray2, (void*) &keyArray[2], sizeof(keyArray[0]));
+    // xSemaphoreGive(keyArrayMutex);
+    //uint32_t value = keyArray0 + (keyArray1 << 4) + (keyArray2 << 8);
     //u8g2.drawStr(2,10, "KeyArray:"); 
     //u8g2.setCursor(60,10);
     //u8g2.print(value,HEX);
@@ -372,14 +369,18 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.setCursor(30,30);
     u8g2.print(knob1.getRotation()); 
 
-    uint32_t ID;
-
-    // Debug code for CAN Bus
+    // Print CAN bus messages
     u8g2.drawStr(75,10, "CAN:"); 
     u8g2.setCursor(100,10);
-    u8g2.print((char) RX_Message[0]);
-    u8g2.print(RX_Message[1]);
-    u8g2.print(RX_Message[2]);
+    // Make a local copy of last received message
+    uint8_t localRX_Message[8];
+    xSemaphoreTake(RX_MessageMutex, portMAX_DELAY);
+      memcpy(&localRX_Message, (void*) &RX_Message, sizeof(RX_Message));
+    xSemaphoreGive(RX_MessageMutex);
+
+    u8g2.print((char) localRX_Message[0]);
+    u8g2.print(localRX_Message[1]);
+    u8g2.print(localRX_Message[2]);
 
     //Send to the display
     u8g2.sendBuffer();          // transfer internal memory to the display
@@ -395,7 +396,12 @@ void displayUpdateTask(void * pvParameters) {
 /// THREAD: Decode Thread for CAN Bus Communications
 void decodeTask(void * pvParameters) {
   while(1) {
-    xQueueReceive(msgInQ, RX_Message, portMAX_DELAY);
+    uint8_t localRX_Message[8];
+    xQueueReceive(msgInQ, localRX_Message, portMAX_DELAY);
+    xSemaphoreTake(RX_MessageMutex, portMAX_DELAY);
+      memcpy((void*) &RX_Message, &localRX_Message, sizeof(localRX_Message));
+    xSemaphoreGive(RX_MessageMutex);
+
     bool is_press = (RX_Message[0]=='P');
     if(is_press) {
       int32_t localCurrentStepSize = 0;
@@ -455,6 +461,8 @@ void setup() {
 
   // Mutex to access safely the global keyArray variable
   keyArrayMutex = xSemaphoreCreateMutex();
+    // Mutex to access safely the global keyArray variable
+  RX_MessageMutex = xSemaphoreCreateMutex();
 
   // ---- INITIALIZE INTERRUPTS AND THREADS: ----
 
