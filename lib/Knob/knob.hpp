@@ -75,7 +75,7 @@ class Knob {
         row = _row;
         firstColumn = _firstColumn;
         prevState = 0b11;
-        rotation = 0;
+        rotation = floor((_lowerLimit + _upperLimit) / 2);
     }
 
     /// Analyse the output of the keymatrix read and compute the rotation of the knob

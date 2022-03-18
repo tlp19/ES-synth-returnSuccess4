@@ -8,6 +8,16 @@
 //Constants
   const uint32_t interval = 100; //Display update interval
 
+//Key Matrix knob locations
+  const int knob3Row = 3;
+  const int knob2Row = 3;
+  const int knob1Row = 4;
+  const int knob0Row = 4;
+  const int knob3FCol = 0;
+  const int knob2FCol = 2;
+  const int knob1FCol = 0;
+  const int knob0FCol = 2;
+
 //Pin definitions
   //Row select and enable
   const int RA0_PIN = D3;
@@ -194,13 +204,13 @@ const char* getCurrentKey() {
 
 
 // Global variable for rotation of Knob 3
-volatile Knob knob3 = Knob(3, 0, 0, 16);
+volatile Knob knob3 = Knob(knob3Row, knob3FCol, 0, 16);
 
 // Global variable for rotation of Knob 2
-volatile Knob knob2 = Knob(3, 2, 0, 16);
+volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9);
 
 // Global variable for rotation of Knob 2
-volatile Knob knob1 = Knob(4, 0, 0, 5);
+volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
 
 // ========================  INTERRUPTS & THREADS  ===========================
 
@@ -209,9 +219,16 @@ volatile Knob knob1 = Knob(4, 0, 0, 5);
 
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
+  int octave = knob2.getRotation();
+  int32_t stepSize;
+  if ((octave-4) >= 0) {
+    stepSize = (currentStepSize << (octave-4));
+  } else {
+    stepSize = (currentStepSize >> -(octave-4));
+  }
   // Build a sawtooth waveform
   static int32_t phaseAcc = 0;
-  phaseAcc += currentStepSize;
+  phaseAcc += stepSize;
   int32_t Vout = phaseAcc >> 24;
   // Adjust the volume based on the volume controller
   Vout = Vout >> (8 - knob3.getRotation()/2);
@@ -317,24 +334,25 @@ void displayUpdateTask(void * pvParameters) {
     uint32_t value = keyArray0 + (keyArray1 << 4) + (keyArray2 << 8);
     
     // b. Print the keyArray as a hexadecimal number
-    u8g2.drawStr(2,10, "KeyArray:"); 
-    u8g2.setCursor(60,10);
-    u8g2.print(value,HEX);
+    //u8g2.drawStr(2,10, "KeyArray:"); 
+    //u8g2.setCursor(60,10);
+    //u8g2.print(value,HEX);
 
     // c. Print the key to the screen
-    u8g2.drawStr(2,20, "Key:"); 
+    u8g2.drawStr(2,10, "Key:"); 
     const char* key = getCurrentKey();
-    u8g2.drawStr(30,20, key); 
+    u8g2.drawStr(30,10, key); 
 
     // d. Print the knob rotation to the screen
     u8g2.drawStr(90,30, "Vol:"); 
     u8g2.setCursor(116,30);
     u8g2.print(knob3.getRotation()); 
 
-    u8g2.setCursor(70,30);
+    u8g2.drawStr(50,30, "Oct:"); 
+    u8g2.setCursor(76,30);
     u8g2.print(knob2.getRotation());
 
-    u8g2.setCursor(50,30);
+    u8g2.setCursor(30,30);
     u8g2.print(knob1.getRotation()); 
 
     uint32_t ID;
@@ -345,8 +363,8 @@ void displayUpdateTask(void * pvParameters) {
           CAN_RX(ID, RX_Message);
 
     // Debug code for CAN Bus
-    u8g2.drawStr(80,20, "CAN:"); 
-    u8g2.setCursor(106,20);
+    u8g2.drawStr(75,10, "CAN:"); 
+    u8g2.setCursor(100,10);
     u8g2.print((char) RX_Message[0]);
     u8g2.print(RX_Message[1]);
     u8g2.print(RX_Message[2]);
