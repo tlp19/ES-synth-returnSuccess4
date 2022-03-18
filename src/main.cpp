@@ -454,7 +454,7 @@ void setup() {
     256,
     NULL,
     1,
-    &scanKeysHandle
+    &displayUpdateHandle
   );
 
   // Initialise CAN bus
