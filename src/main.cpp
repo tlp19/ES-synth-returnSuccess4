@@ -144,6 +144,15 @@ int32_t computeStepSize(double freq, int offset) {
   float offset_factor = pow(2.0, (1.0/12.0));
   return stepSize * pow(offset_factor, offset);
 }
+
+int32_t shiftByOctave(int32_t stepSize, int octave) {
+  if ((octave-4) >= 0) {
+    return stepSize = (stepSize << (octave-4));
+  } else {
+    return stepSize = (stepSize >> -(octave-4));
+  }
+}
+
 const int32_t stepSizes [] = {computeStepSize(440, -9), computeStepSize(440, -8), computeStepSize(440, -7), computeStepSize(440, -6), computeStepSize(440, -5),computeStepSize(440, -4), computeStepSize(440, -3), computeStepSize(440, -2), computeStepSize(440, -1), computeStepSize(440, 0), computeStepSize(440, 1), computeStepSize(440, 2)};
 const char* keysList [] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 // Store the current stepSize in a volatile variable
@@ -186,11 +195,7 @@ void setCurrentStepSize() {
     }
   }
   int octave = knob2.getRotation();
-  if ((octave-4) >= 0) {
-    localCurrentStepSize = (localCurrentStepSize << (octave-4));
-  } else {
-    localCurrentStepSize = (localCurrentStepSize >> -(octave-4));
-  }
+  localCurrentStepSize = shiftByOctave(localCurrentStepSize, octave);
   __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
   // equivalent to currentStepSize = localCurrentStepSize;
 }
