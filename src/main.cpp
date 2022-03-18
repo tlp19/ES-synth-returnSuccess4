@@ -166,9 +166,12 @@ volatile int32_t currentStepSize = 0;
 // Store the currentKey being played
 volatile char* currentKey;
 
+// Mutex to protect shared ressources
+SemaphoreHandle_t keyArrayMutex;
 // Reading from the keyboard
 volatile uint8_t keyArray[7];
-SemaphoreHandle_t keyArrayMutex;
+// Initialise the array with all unpressed
+volatile uint8_t keyArray_prev[3] = {1,1,1};
 
 // Global variable for rotation of Knob 3
 volatile Knob knob3 = Knob(knob3Row, knob3FCol, 0, 16);
@@ -179,30 +182,60 @@ volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9);
 // Global variable for rotation of Knob 2
 volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
 
-// Initialise the array with all unpressed
-volatile uint8_t keyArray_prev[7] = {1,1,1,1,1,1,1};
-
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
-  int32_t localCurrentStepSize = 0;
+  // Local variable for currentStepSize
+  int32_t localCurrentStepSize;
+  // CAN Bus transmissable message
+  uint8_t TX_Message[8]= {0};
+
   // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
   for (int i=0 ; i <= 2 ; i++) {
     uint8_t keyArrayI;
+    uint8_t keyArray_prevI;
     xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
       memcpy(&keyArrayI, (void*) &keyArray[i], sizeof(keyArray[i]));
+      memcpy(&keyArray_prevI, (void*) &keyArray_prev[i], sizeof(keyArray_prev[i]));
     xSemaphoreGive(keyArrayMutex);
-    // Iterate through the last 4 bits of the row's value, checking each time if it is zero
-    for (int j=0 ; j <= 3 ; j++) {
-        bool isSelected = !(((keyArrayI >> j)) & 0x01);
-        // If it is zero, then the key is being pressed
-        if (isSelected) {
-          localCurrentStepSize = stepSizes[i*4+j];
+
+    // Check if the keyArray has changed
+    if(keyArrayI != keyArray_prevI) {
+      // Iterate through the last 4 bits of the row's value, checking each time if it is zero
+      for (int j=0 ; j <= 3 ; j++) {
+        // If it is one, then the key is being pressed
+        bool keyNowSelected = !(((keyArrayI >> j)) & 0x01);
+        bool keyPrevSelected = !(((keyArray_prevI >> j)) & 0x01);
+        // If the key state changed
+        if(keyNowSelected != keyPrevSelected) {
+          if(keyNowSelected) {
+            // Key is pressed
+            TX_Message[0] = 'P';
+            localCurrentStepSize = stepSizes[i*4+j];
+            localCurrentStepSize = shiftByOctave(localCurrentStepSize, knob2.getRotation());
+          } else {
+            // Key is released
+            TX_Message[0] = 'R';
+            localCurrentStepSize = 0;
+          }
+          // Update the octave
+          TX_Message[1] = knob2.getRotation();
+          // Update the key index
+          TX_Message[2] = i*4+j;
+          // Register that the change has been sent (relative toggle one/zero)
+          keyArray_prevI ^= 1 << j;
+          // Update the global keyArray_prev
+          xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+            // "assignment" of keyArray[i] using memcpy
+            memcpy((void*) &keyArray_prev[i], &keyArray_prevI, sizeof(keyArray_prevI));
+          xSemaphoreGive(keyArrayMutex);
         }
+      }
+      // send the message over the bus using the CAN
+      CAN_TX(0x123, TX_Message);      
+      __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
     }
   }
-  int octave = knob2.getRotation();
-  localCurrentStepSize = shiftByOctave(localCurrentStepSize, octave);
-  __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+
   // equivalent to currentStepSize = localCurrentStepSize;
 }
 
@@ -256,10 +289,6 @@ void CAN_RX_ISR (void) {
 
 // THREAD: Scan the keys and set the currentStepSize
 void scanKeysTask(void * pvParameters) {
-
-  // CAN Bus transmissable message
-  uint8_t TX_Message[8]= {0};
-
   // Define parameters for how to run the thread
   const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
@@ -287,36 +316,7 @@ void scanKeysTask(void * pvParameters) {
     // Set the current rotation of knob 3, according to the key matrix
     knob3.setCurrentRotation();
     knob2.setCurrentRotation();
-    knob1.setCurrentRotation();
-
-    // Check for unsent updates and write to the CAN bus
-    for (int i=0; i<=2; i++) {
-      // Check for any changes that need to be sent on CAN
-      if(keyArray[i] != keyArray_prev[i]) {
-        for (int j=0 ; j <= 3 ; j++) {
-          bool key_now = (((keyArray[i] >> j)) & 0x01);
-          bool key_prev = (((keyArray_prev[i] >> j)) & 0x01);
-          if(key_now != key_prev) {
-            // This is the bit that is different
-            if(key_now) {
-              // Key is released
-              TX_Message[0] = 'R';
-            } else {
-              // Key is pressed
-              TX_Message[0] = 'P';
-            }
-            // Update the octave
-            TX_Message[1] = knob2.getRotation();
-            // Update the key index
-            TX_Message[2] = i*4+j;
-            // Register that the change has been sent
-            keyArray_prev[i] ^= 1 << j;
-          }
-        }
-        // send the message over the bus using the CAN
-        CAN_TX(0x123, TX_Message);
-      }
-    } 
+    knob1.setCurrentRotation(); 
 
     // Delay the next execution until new initiation according to xFrequency
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -401,6 +401,7 @@ void decodeTask(void * pvParameters) {
       int32_t localCurrentStepSize = 0;
       // Set the note accordingly
       localCurrentStepSize = stepSizes[RX_Message[2]];
+      localCurrentStepSize = shiftByOctave(localCurrentStepSize, RX_Message[1]);
       __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
     } else {
       __atomic_store_n(&currentStepSize, 0, __ATOMIC_RELAXED);
@@ -411,7 +412,9 @@ void decodeTask(void * pvParameters) {
 /// =========================== ARDUINO SETUP & LOOP ===================================
 
 void setup() {
-  // put your setup code here, to run once:
+
+  // Initialise CAN bus mode (true for loopback, false for multi-board)
+  CAN_Init(false);
 
   //Set pin directions
   pinMode(RA0_PIN, OUTPUT);
@@ -494,9 +497,6 @@ void setup() {
     2,
     &decodeHandle
   );
-
-  // Initialise CAN bus
-  CAN_Init(false);
 
   CAN_RegisterRX_ISR(CAN_RX_ISR);
   msgInQ = xQueueCreate(36,8);
