@@ -292,11 +292,10 @@ void scanKeysTask(void * pvParameters) {
             keyArray_prev[i] ^= 1 << j;
           }
         }
+        // send the message over the bus using the CAN
+        CAN_TX(0x123, TX_Message);
       }
     } 
-
-    // send the message over the bus using the CAN
-    CAN_TX(0x123, TX_Message);
 
     // Delay the next execution until new initiation according to xFrequency
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -468,7 +467,7 @@ void setup() {
   xTaskCreate(
     decodeTask,
     "decodeTask",
-    8,
+    256,
     NULL,
     2,
     &decodeHandle
