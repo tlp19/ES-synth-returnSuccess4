@@ -181,6 +181,11 @@ SemaphoreHandle_t RX_MessageMutex;
 // Global Message variable
 volatile uint8_t RX_Message[8] = {0};
 
+// CAN Bus Message Receive Queue
+QueueHandle_t msgOutQ;
+// Mutex to protect shared ressources
+SemaphoreHandle_t CAN_TX_Semaphore;
+
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
   // Local variable for currentStepSize
@@ -229,8 +234,9 @@ void setCurrentStepSize() {
           xSemaphoreGive(keyArrayMutex);
         }
       }
-      // send the message over the bus using the CAN
-      CAN_TX(0x123, TX_Message);      
+      // Send the message over the bus using the CAN
+      //CAN_TX(0x123, TX_Message);
+      xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
       __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
     }
   }
@@ -284,6 +290,11 @@ void CAN_RX_ISR (void) {
   xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
 }
 
+// CAN Bus Message Queue ISR Writer
+void CAN_TX_ISR (void) {
+  xSemaphoreGiveFromISR(CAN_TX_Semaphore, NULL);
+}
+
 // -------------------------------- THREADS -----------------------------
 
 // THREAD: Scan the keys and set the currentStepSize
@@ -292,7 +303,6 @@ void scanKeysTask(void * pvParameters) {
   const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
 
-  uint8_t prevRotationState = 0b00;
   // Body of the thread (i.e. what it does)
   while(1){
     // Perform reading of the key matrix
@@ -333,31 +343,13 @@ void displayUpdateTask(void * pvParameters) {
     //Update display
     u8g2.clearBuffer();         // clear the internal memory
     u8g2.setFont(u8g2_font_profont12_tf); // choose a suitable font
-    
-    // b. Print the keyArray as a hexadecimal number
-    // Use a Mutex to safely access keyArray: make local copies of relevant data to minimize locking time
-    // copy keyArray[i] into a local variable to only lock mutex during copy operation
-    // uint8_t keyArray0, keyArray1, keyArray2;
-    // xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-    //   memcpy(&keyArray0, (void*) &keyArray[0], sizeof(keyArray[0]));
-    // xSemaphoreGive(keyArrayMutex);
-    // xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-    //   memcpy(&keyArray1, (void*) &keyArray[1], sizeof(keyArray[1]));
-    // xSemaphoreGive(keyArrayMutex);
-    // xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-    //   memcpy(&keyArray2, (void*) &keyArray[2], sizeof(keyArray[0]));
-    // xSemaphoreGive(keyArrayMutex);
-    //uint32_t value = keyArray0 + (keyArray1 << 4) + (keyArray2 << 8);
-    //u8g2.drawStr(2,10, "KeyArray:"); 
-    //u8g2.setCursor(60,10);
-    //u8g2.print(value,HEX);
 
-    // c. Print the key to the screen
+    // Print the current local key to the screen
     u8g2.drawStr(2,10, "Key:"); 
     const char* key = getCurrentKey();
     u8g2.drawStr(30,10, key); 
 
-    // d. Print the knob rotation to the screen
+    // Print the knobs rotation to the screen
     u8g2.drawStr(90,30, "Vol:"); 
     u8g2.setCursor(116,30);
     u8g2.print(knob3.getRotation()); 
@@ -415,13 +407,18 @@ void decodeTask(void * pvParameters) {
   }
 }
 
+void CAN_TX_Task (void * pvParameters) {
+  uint8_t msgOut[8];
+  while(1) {
+    xQueueReceive(msgOutQ, msgOut, portMAX_DELAY);
+    xSemaphoreTake(CAN_TX_Semaphore, portMAX_DELAY);
+    CAN_TX(0x123, msgOut);
+  }
+}
+
 /// =========================== ARDUINO SETUP & LOOP ===================================
 
 void setup() {
-
-  // Initialise CAN bus mode (true for loopback, false for multi-board)
-  CAN_Init(false);
-
   //Set pin directions
   pinMode(RA0_PIN, OUTPUT);
   pinMode(RA1_PIN, OUTPUT);
@@ -450,19 +447,20 @@ void setup() {
   Serial.begin(9600);
   Serial.println("Hello World");
 
-  for (int i=0; i<12 ; i++) {
-    Serial.print("stepSizes[");
-    Serial.print(i);
-    Serial.print("]: ");
-    Serial.println(stepSizes[i]);
-  }
 
   // ------ INITIALIZE COMMON RESSOURCES -----
 
   // Mutex to access safely the global keyArray variable
   keyArrayMutex = xSemaphoreCreateMutex();
-    // Mutex to access safely the global keyArray variable
+  // Mutex to access safely the last RX_Message
   RX_MessageMutex = xSemaphoreCreateMutex();
+  // Semaphore to handle safe sending of messages
+  CAN_TX_Semaphore = xSemaphoreCreateCounting(3,3);
+
+  // ------ INITIALIZE QUEUES ------
+
+  msgInQ = xQueueCreate(36,8);
+  msgOutQ = xQueueCreate(36,8);
 
   // ---- INITIALIZE INTERRUPTS AND THREADS: ----
 
@@ -480,7 +478,7 @@ void setup() {
     "scanKeys",
     64,
     NULL,
-    3,
+    4,
     &scanKeysHandle
   );
 
@@ -495,26 +493,41 @@ void setup() {
     &displayUpdateHandle
   );
 
-  // Initialize the thread to decode for the CAN Bus
+  // Initialize the thread to decode messages from the CAN Bus
   TaskHandle_t decodeHandle = NULL;
   xTaskCreate(
     decodeTask,
-    "decodeTask",
+    "decode",
     256,
     NULL,
     2,
     &decodeHandle
   );
 
+  // Initialize the thread to send messages to the CAN Bus
+  TaskHandle_t CAN_TX_Handle = NULL;
+  xTaskCreate(
+    CAN_TX_Task,
+    "CAN_TX",
+    256,
+    NULL,
+    3,
+    &CAN_TX_Handle
+  );
+
+    // Initialise CAN bus mode: true for single-board (loopback), false for multi-board
+  CAN_Init(false);
+
+  // Interrupt when receiving a CAN message
   CAN_RegisterRX_ISR(CAN_RX_ISR);
-  msgInQ = xQueueCreate(36,8);
+  // Interrupt when sending a CAN message
+  CAN_RegisterTX_ISR(CAN_TX_ISR);
 
   setCANFilter(0x123,0x7ff);
   CAN_Start();
 
   // Start the RTOS scheduler to run the threads
   vTaskStartScheduler();
-  
 }
 
 void loop() {
