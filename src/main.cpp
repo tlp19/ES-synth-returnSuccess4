@@ -8,6 +8,16 @@
 //Constants
   const uint32_t interval = 100; //Display update interval
 
+//Key Matrix knob locations
+  const int knob3Row = 3;
+  const int knob2Row = 3;
+  const int knob1Row = 4;
+  const int knob0Row = 4;
+  const int knob3FCol = 0;
+  const int knob2FCol = 2;
+  const int knob1FCol = 0;
+  const int knob0FCol = 2;
+
 //Pin definitions
   //Row select and enable
   const int RA0_PIN = D3;
@@ -151,6 +161,15 @@ volatile char* currentKey;
 volatile uint8_t keyArray[7];
 SemaphoreHandle_t keyArrayMutex;
 
+// Global variable for rotation of Knob 3
+volatile Knob knob3 = Knob(knob3Row, knob3FCol, 0, 16);
+
+// Global variable for rotation of Knob 2
+volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9);
+
+// Global variable for rotation of Knob 2
+volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
+
 // Initialise the array with all unpressed
 volatile uint8_t keyArray_prev[7] = {1,1,1,1,1,1,1};
 
@@ -171,6 +190,12 @@ void setCurrentStepSize() {
           localCurrentStepSize = stepSizes[i*4+j];
         }
     }
+  }
+  int octave = knob2.getRotation();
+  if ((octave-4) >= 0) {
+    localCurrentStepSize = (localCurrentStepSize << (octave-4));
+  } else {
+    localCurrentStepSize = (localCurrentStepSize >> -(octave-4));
   }
   __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
   // equivalent to currentStepSize = localCurrentStepSize;
@@ -197,16 +222,6 @@ const char* getCurrentKey() {
   return currentKey;
 }
 
-
-
-// Global variable for rotation of Knob 3
-volatile Knob knob3 = Knob(3, 0, 0, 16);
-
-// Global variable for rotation of Knob 2
-volatile Knob knob2 = Knob(3, 2, 0, 16);
-
-// Global variable for rotation of Knob 2
-volatile Knob knob1 = Knob(4, 0, 0, 5);
 
 // ========================  INTERRUPTS & THREADS  ===========================
 
@@ -239,7 +254,6 @@ void scanKeysTask(void * pvParameters) {
 
   // CAN Bus transmissable message
   uint8_t TX_Message[8]= {0};
-  TX_Message[1] = 4;
 
   // Define parameters for how to run the thread
   const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
@@ -286,6 +300,8 @@ void scanKeysTask(void * pvParameters) {
               // Key is pressed
               TX_Message[0] = 'P';
             }
+            // Update the octave
+            TX_Message[1] = knob2.getRotation();
             // Update the key index
             TX_Message[2] = i*4+j;
             // Register that the change has been sent
@@ -330,31 +346,32 @@ void displayUpdateTask(void * pvParameters) {
     uint32_t value = keyArray0 + (keyArray1 << 4) + (keyArray2 << 8);
     
     // b. Print the keyArray as a hexadecimal number
-    u8g2.drawStr(2,10, "KeyArray:"); 
-    u8g2.setCursor(60,10);
-    u8g2.print(value,HEX);
+    //u8g2.drawStr(2,10, "KeyArray:"); 
+    //u8g2.setCursor(60,10);
+    //u8g2.print(value,HEX);
 
     // c. Print the key to the screen
-    u8g2.drawStr(2,20, "Key:"); 
+    u8g2.drawStr(2,10, "Key:"); 
     const char* key = getCurrentKey();
-    u8g2.drawStr(30,20, key); 
+    u8g2.drawStr(30,10, key); 
 
     // d. Print the knob rotation to the screen
     u8g2.drawStr(90,30, "Vol:"); 
     u8g2.setCursor(116,30);
     u8g2.print(knob3.getRotation()); 
 
-    u8g2.setCursor(70,30);
+    u8g2.drawStr(50,30, "Oct:"); 
+    u8g2.setCursor(76,30);
     u8g2.print(knob2.getRotation());
 
-    u8g2.setCursor(50,30);
+    u8g2.setCursor(30,30);
     u8g2.print(knob1.getRotation()); 
 
     uint32_t ID;
 
     // Debug code for CAN Bus
-    u8g2.drawStr(80,20, "CAN:"); 
-    u8g2.setCursor(106,20);
+    u8g2.drawStr(75,10, "CAN:"); 
+    u8g2.setCursor(100,10);
     u8g2.print((char) RX_Message[0]);
     u8g2.print(RX_Message[1]);
     u8g2.print(RX_Message[2]);
