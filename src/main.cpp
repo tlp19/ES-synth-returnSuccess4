@@ -155,6 +155,15 @@ volatile char* currentKey;
 volatile uint8_t keyArray[7];
 SemaphoreHandle_t keyArrayMutex;
 
+// Global variable for rotation of Knob 3
+volatile Knob knob3 = Knob(knob3Row, knob3FCol, 0, 16);
+
+// Global variable for rotation of Knob 2
+volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9);
+
+// Global variable for rotation of Knob 2
+volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
+
 // Initialise the array with all unpressed
 volatile uint8_t keyArray_prev[7] = {1,1,1,1,1,1,1};
 
@@ -175,6 +184,12 @@ void setCurrentStepSize() {
           localCurrentStepSize = stepSizes[i*4+j];
         }
     }
+  }
+  int octave = knob2.getRotation();
+  if ((octave-4) >= 0) {
+    localCurrentStepSize = (localCurrentStepSize << (octave-4));
+  } else {
+    localCurrentStepSize = (localCurrentStepSize >> -(octave-4));
   }
   __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
   // equivalent to currentStepSize = localCurrentStepSize;
@@ -202,16 +217,6 @@ const char* getCurrentKey() {
 }
 
 
-
-// Global variable for rotation of Knob 3
-volatile Knob knob3 = Knob(knob3Row, knob3FCol, 0, 16);
-
-// Global variable for rotation of Knob 2
-volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9);
-
-// Global variable for rotation of Knob 2
-volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
-
 // ========================  INTERRUPTS & THREADS  ===========================
 
 
@@ -219,16 +224,9 @@ volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
 
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
-  int octave = knob2.getRotation();
-  int32_t stepSize;
-  if ((octave-4) >= 0) {
-    stepSize = (currentStepSize << (octave-4));
-  } else {
-    stepSize = (currentStepSize >> -(octave-4));
-  }
   // Build a sawtooth waveform
   static int32_t phaseAcc = 0;
-  phaseAcc += stepSize;
+  phaseAcc += currentStepSize;
   int32_t Vout = phaseAcc >> 24;
   // Adjust the volume based on the volume controller
   Vout = Vout >> (8 - knob3.getRotation()/2);
