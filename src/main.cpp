@@ -49,6 +49,12 @@
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
 
+// CAN Bus Message Queue
+QueueHandle_t msgInQ;
+
+// Global Message variable (temporary, changed to Mutex later)
+uint8_t RX_Message[8]={0};
+
 //Function to set outputs using key matrix
 void setOutMuxBit(const uint8_t bitIdx, const bool value) {
       digitalWrite(REN_PIN,LOW);
@@ -238,6 +244,14 @@ void sampleISR() {
   analogWrite(OUTR_PIN, Vout + 128);
 }
 
+// CAN Bus Message Queue ISR Writer
+void CAN_RX_ISR (void) {
+  uint8_t RX_Message_ISR[8];
+  uint32_t ID;
+  CAN_RX(ID, RX_Message_ISR);
+  xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
+}
+
 // -------------------------------- THREADS -----------------------------
 
 // THREAD: Scan the keys and set the currentStepSize
@@ -245,7 +259,6 @@ void scanKeysTask(void * pvParameters) {
 
   // CAN Bus transmissable message
   uint8_t TX_Message[8]= {0};
-  TX_Message[1] = 4;
 
   // Define parameters for how to run the thread
   const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
@@ -292,17 +305,18 @@ void scanKeysTask(void * pvParameters) {
               // Key is pressed
               TX_Message[0] = 'P';
             }
+            // Update the octave
+            TX_Message[1] = knob2.getRotation();
             // Update the key index
             TX_Message[2] = i*4+j;
             // Register that the change has been sent
             keyArray_prev[i] ^= 1 << j;
           }
         }
+        // send the message over the bus using the CAN
+        CAN_TX(0x123, TX_Message);
       }
     } 
-
-    // send the message over the bus using the CAN
-    CAN_TX(0x123, TX_Message);
 
     // Delay the next execution until new initiation according to xFrequency
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -359,11 +373,6 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.print(knob1.getRotation()); 
 
     uint32_t ID;
-    uint8_t RX_Message[8]={0};
-
-    // Poll for received messages
-    while (CAN_CheckRXLevel())
-          CAN_RX(ID, RX_Message);
 
     // Debug code for CAN Bus
     u8g2.drawStr(75,10, "CAN:"); 
@@ -383,6 +392,21 @@ void displayUpdateTask(void * pvParameters) {
   }
 }
 
+/// THREAD: Decode Thread for CAN Bus Communications
+void decodeTask(void * pvParameters) {
+  while(1) {
+    xQueueReceive(msgInQ, RX_Message, portMAX_DELAY);
+    bool is_press = (RX_Message[0]=='P');
+    if(is_press) {
+      int32_t localCurrentStepSize = 0;
+      // Set the note accordingly
+      localCurrentStepSize = stepSizes[RX_Message[2]];
+      __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+    } else {
+      __atomic_store_n(&currentStepSize, 0, __ATOMIC_RELAXED);
+    }
+  }
+}
 
 /// =========================== ARDUINO SETUP & LOOP ===================================
 
@@ -445,7 +469,7 @@ void setup() {
     "scanKeys",
     64,
     NULL,
-    2,
+    3,
     &scanKeysHandle
   );
 
@@ -460,14 +484,28 @@ void setup() {
     &displayUpdateHandle
   );
 
+  // Initialize the thread to decode for the CAN Bus
+  TaskHandle_t decodeHandle = NULL;
+  xTaskCreate(
+    decodeTask,
+    "decodeTask",
+    256,
+    NULL,
+    2,
+    &decodeHandle
+  );
+
   // Initialise CAN bus
-  CAN_Init(true);
+  CAN_Init(false);
+
+  CAN_RegisterRX_ISR(CAN_RX_ISR);
+  msgInQ = xQueueCreate(36,8);
+
   setCANFilter(0x123,0x7ff);
   CAN_Start();
 
   // Start the RTOS scheduler to run the threads
   vTaskStartScheduler();
-
   
 }
 
