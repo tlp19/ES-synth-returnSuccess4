@@ -2,6 +2,7 @@
 #include <U8g2lib.h>
 #include <STM32FreeRTOS.h>
 #include <math.h>
+#include "knob.hpp"
 #include<ES_CAN.h>
 
 //Constants
@@ -142,21 +143,23 @@ volatile char* currentKey;
 
 // Reading from the keyboard
 volatile uint8_t keyArray[7];
+SemaphoreHandle_t keyArrayMutex;
 
 // Initialise the array with all unpressed
 volatile uint8_t keyArray_prev[7] = {1,1,1,1,1,1,1};
-
-// queue handler
-QueueHandle_t msgInQ;
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
   int32_t localCurrentStepSize = 0;
   // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
   for (int i=0 ; i <= 2 ; i++) {
+    uint8_t keyArrayI;
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      memcpy(&keyArrayI, (void*) &keyArray[i], sizeof(keyArray[i]));
+    xSemaphoreGive(keyArrayMutex);
     // Iterate through the last 4 bits of the row's value, checking each time if it is zero
     for (int j=0 ; j <= 3 ; j++) {
-        bool isSelected = !(((keyArray[i] >> j)) & 0x01);
+        bool isSelected = !(((keyArrayI >> j)) & 0x01);
         // If it is zero, then the key is being pressed
         if (isSelected) {
           localCurrentStepSize = stepSizes[i*4+j];
@@ -169,12 +172,16 @@ void setCurrentStepSize() {
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 const char* getCurrentKey() {
-  const char* currentKey = "";
+  const char* currentKey = "-";
   // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
   for (int i=0 ; i <= 2 ; i++) {
+    uint8_t keyArrayI;
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      memcpy(&keyArrayI, (void*) &keyArray[i], sizeof(keyArray[i]));
+    xSemaphoreGive(keyArrayMutex);
     // Iterate through the last 4 bits of the row's value, checking each time if it is zero
     for (int j=0 ; j <= 3 ; j++) {
-        bool isSelected = !(((keyArray[i] >> j)) & 0x01);
+        bool isSelected = !(((keyArrayI >> j)) & 0x01);
         // If it is zero, then the key is being pressed
         if (isSelected) {
           currentKey = keysList[i*4+j];
@@ -184,11 +191,16 @@ const char* getCurrentKey() {
   return currentKey;
 }
 
-void CAN_RX_ISR (void) {
-  uint8_t RX_Message_ISR[8];
-  uint32_t ID;
-  CAN_RX(ID, RX_Message_ISR); xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
-}
+
+
+// Global variable for rotation of Knob 3
+volatile Knob knob3 = Knob(3, 0, 0, 16);
+
+// Global variable for rotation of Knob 2
+volatile Knob knob2 = Knob(3, 2, 0, 16);
+
+// Global variable for rotation of Knob 2
+volatile Knob knob1 = Knob(4, 0, 0, 5);
 
 // ========================  INTERRUPTS & THREADS  ===========================
 
@@ -197,9 +209,12 @@ void CAN_RX_ISR (void) {
 
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
+  // Build a sawtooth waveform
   static int32_t phaseAcc = 0;
   phaseAcc += currentStepSize;
   int32_t Vout = phaseAcc >> 24;
+  // Adjust the volume based on the volume controller
+  Vout = Vout >> (8 - knob3.getRotation()/2);
   analogWrite(OUTR_PIN, Vout + 128);
 }
 
@@ -210,22 +225,36 @@ void scanKeysTask(void * pvParameters) {
 
   // CAN Bus transmissable message
   uint8_t TX_Message[8]= {0};
-  TX_Message[1] = 4; // default octave 
+  TX_Message[1] = 4;
 
   // Define parameters for how to run the thread
-  const TickType_t xFrequency = 50/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
+  const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
 
+  uint8_t prevRotationState = 0b00;
   // Body of the thread (i.e. what it does)
   while(1){
-    for (int i=0 ; i<=2 ; i++) {
+    // Perform reading of the key matrix
+    for (int i=0 ; i<=6 ; i++) {
       // Select the row in the matrix we want to read from
       setRow(i);
-      // Small delay for parasitic capacitance
+      // Small delay for parasitic capacitance between setRow and readCols
       delayMicroseconds(3);
-      keyArray[i] = readCols();
+
+      // Compute function in a local variable to minimize Mutex locking time
+      uint8_t keyArrayI = readCols();
+      // Store it in the mutex with a mememory copy
+      xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+        // "assignment" of keyArray[i] using memcpy
+        memcpy((void*) &keyArray[i], &keyArrayI, sizeof(keyArrayI));
+      xSemaphoreGive(keyArrayMutex);
     }
+    // Set the current stepSize, according to the key matrix
     setCurrentStepSize();
+    // Set the current rotation of knob 3, according to the key matrix
+    knob3.setCurrentRotation();
+    knob2.setCurrentRotation();
+    knob1.setCurrentRotation();
 
     // Check for unsent updates and write to the CAN bus
     for (int i=0; i<=2; i++) {
@@ -260,15 +289,6 @@ void scanKeysTask(void * pvParameters) {
   }
 }
 
-// THREAD: decode thread to process messages on the queue
-void decodeTask(void * pvParameters){
-  const TickType_t xFrequency = 100/portTICK_PERIOD_MS;  //Initiation interval -> 100ms
-  TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
-
-  
-  xQueueReceive(msgInQ, RX_Message_ISR, portMAX_DELAY);
-}
-
 // THREAD: Update the display on the device
 void displayUpdateTask(void * pvParameters) {
   // Define parameters for how to run the thread
@@ -279,21 +299,44 @@ void displayUpdateTask(void * pvParameters) {
   while(1){
     //Update display
     u8g2.clearBuffer();         // clear the internal memory
-    u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
+    u8g2.setFont(u8g2_font_profont12_tf); // choose a suitable font
 
-    // a. Text
-    u8g2.drawStr(2,10,"Hello World!");  // write something to the internal memory
+    // Use a Mutex to safely access keyArray: make local copies of relevant data to minimize locking time
+    // copy keyArray[i] into a local variable to only lock mutex during copy operation
+    uint8_t keyArray0, keyArray1, keyArray2;
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      memcpy(&keyArray0, (void*) &keyArray[0], sizeof(keyArray[0]));
+    xSemaphoreGive(keyArrayMutex);
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      memcpy(&keyArray1, (void*) &keyArray[1], sizeof(keyArray[1]));
+    xSemaphoreGive(keyArrayMutex);
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      memcpy(&keyArray2, (void*) &keyArray[2], sizeof(keyArray[0]));
+    xSemaphoreGive(keyArrayMutex);
 
+    uint32_t value = keyArray0 + (keyArray1 << 4) + (keyArray2 << 8);
+    
     // b. Print the keyArray as a hexadecimal number
-    uint32_t value = keyArray[0] + (keyArray[1] << 4) + (keyArray[2] << 8);
-    u8g2.setCursor(2,20);
+    u8g2.drawStr(2,10, "KeyArray:"); 
+    u8g2.setCursor(60,10);
     u8g2.print(value,HEX);
 
     // c. Print the key to the screen
+    u8g2.drawStr(2,20, "Key:"); 
     const char* key = getCurrentKey();
-    u8g2.drawStr(2,30, key); 
+    u8g2.drawStr(30,20, key); 
 
-    // CAN Bus receiving message
+    // d. Print the knob rotation to the screen
+    u8g2.drawStr(90,30, "Vol:"); 
+    u8g2.setCursor(116,30);
+    u8g2.print(knob3.getRotation()); 
+
+    u8g2.setCursor(70,30);
+    u8g2.print(knob2.getRotation());
+
+    u8g2.setCursor(50,30);
+    u8g2.print(knob1.getRotation()); 
+
     uint32_t ID;
     uint8_t RX_Message[8]={0};
 
@@ -302,7 +345,8 @@ void displayUpdateTask(void * pvParameters) {
           CAN_RX(ID, RX_Message);
 
     // Debug code for CAN Bus
-    u8g2.setCursor(66,30);
+    u8g2.drawStr(80,20, "CAN:"); 
+    u8g2.setCursor(106,20);
     u8g2.print((char) RX_Message[0]);
     u8g2.print(RX_Message[1]);
     u8g2.print(RX_Message[2]);
@@ -359,6 +403,11 @@ void setup() {
     Serial.println(stepSizes[i]);
   }
 
+  // ------ INITIALIZE COMMON RESSOURCES -----
+
+  // Mutex to access safely the global keyArray variable
+  keyArrayMutex = xSemaphoreCreateMutex();
+
   // ---- INITIALIZE INTERRUPTS AND THREADS: ----
 
   // Initialize timer for interrupt
@@ -379,7 +428,7 @@ void setup() {
     &scanKeysHandle
   );
 
-  // Initialize the thread to update the display 
+    // Initialize the thread to scan keys and set the currentStepSize
   TaskHandle_t displayUpdateHandle = NULL;
   xTaskCreate(
     displayUpdateTask,
@@ -390,28 +439,15 @@ void setup() {
     &scanKeysHandle
   );
 
-  // Initialize the thread to decode thread
-  TaskHandle_t decodeHandle = NULL;
-  xTaskCreate(
-    decodeTask,
-    "decode",
-    1,
-    NULL,
-    3,
-    &scanKeysHandle
-  );
-
   // Initialise CAN bus
-  CAN_Init(true);
-  CAN_RegisterRX_ISR(CAN_RX_ISR);
+  CAN_Init(false);
   setCANFilter(0x123,0x7ff);
   CAN_Start();
 
-  // initialize Queue Handler 
-  msgInQ = xQueueCreate(36,8);
-
   // Start the RTOS scheduler to run the threads
   vTaskStartScheduler();
+
+  
 }
 
 void loop() {
