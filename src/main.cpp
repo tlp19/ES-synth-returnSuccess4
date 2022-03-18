@@ -393,7 +393,7 @@ void displayUpdateTask(void * pvParameters) {
   }
 }
 
-/// THREAD: Decode Thread for CAN Bus Communications
+// THREAD: Decode Thread for CAN Bus Communications
 void decodeTask(void * pvParameters) {
   while(1) {
     uint8_t localRX_Message[8];
@@ -415,12 +415,30 @@ void decodeTask(void * pvParameters) {
   }
 }
 
+// THREAD: 
+void joystick(void * pvParameters) {
+  const TickType_t xFrequency = 50/portTICK_PERIOD_MS;  //Initiation interval -> 100ms
+  TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
+
+  while(1) {
+    analogRead(A1);
+    Serial.print("x-axis: ");
+    Serial.print(analogRead(A1));
+    Serial.print(", ");
+    analogRead(A0);
+    Serial.print("y-axis: ");
+    Serial.println(analogRead(A0));
+
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+  }
+}
+
 /// =========================== ARDUINO SETUP & LOOP ===================================
 
 void setup() {
 
   // Initialise CAN bus mode (true for loopback, false for multi-board)
-  CAN_Init(false);
+  CAN_Init(true);
 
   //Set pin directions
   pinMode(RA0_PIN, OUTPUT);
@@ -480,7 +498,7 @@ void setup() {
     "scanKeys",
     64,
     NULL,
-    3,
+    4,
     &scanKeysHandle
   );
 
@@ -491,7 +509,7 @@ void setup() {
     "displayUpdate",
     256,
     NULL,
-    1,
+    2,
     &displayUpdateHandle
   );
 
@@ -502,8 +520,19 @@ void setup() {
     "decodeTask",
     256,
     NULL,
-    2,
+    3,
     &decodeHandle
+  );
+
+  // Initialize the thread to scan keys and set the currentStepSize
+  TaskHandle_t joystickHandle = NULL;
+  xTaskCreate(
+    joystick,
+    "joystick",
+    64,
+    NULL,
+    1,
+    &joystickHandle
   );
 
   CAN_RegisterRX_ISR(CAN_RX_ISR);
