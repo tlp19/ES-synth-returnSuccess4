@@ -3,6 +3,7 @@
 #include <STM32FreeRTOS.h>
 #include <math.h>
 #include "knob.hpp"
+#include "button.hpp"
 #include<ES_CAN.h>
 
 //Constants
@@ -17,6 +18,10 @@
   const int knob2FCol = 2;
   const int knob1FCol = 0;
   const int knob0FCol = 2;
+
+//Key Matrix joystick button location
+ const int joystickButtonRow = 5;
+ const int joystickButtonCol = 2;
 
 //Pin definitions
   //Row select and enable
@@ -174,6 +179,12 @@ volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9);
 // Global object for Knob 1
 volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
 
+// Global object for Joystick button
+volatile Button joystickButton = Button(joystickButtonRow, joystickButtonCol);
+
+// Global boolean to know if the board is a sender or receiver
+volatile bool isReceiverBoard = true;
+
 // CAN Bus Message Receive Queue
 QueueHandle_t msgInQ;
 // Mutex to protect shared ressources
@@ -234,10 +245,14 @@ void setCurrentStepSize() {
           xSemaphoreGive(keyArrayMutex);
         }
       }
-      // Send the message over the bus using the CAN
-      //CAN_TX(0x123, TX_Message);
-      xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
-      __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+      
+      if(isReceiverBoard){
+        // If Receiver board, set the currentStepSize to be played by the board
+        __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+      } else {
+        // Send the message over the bus using the CAN if the board is a sender
+        xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+      }
     }
   }
 
@@ -326,6 +341,17 @@ void scanKeysTask(void * pvParameters) {
     knob3.setCurrentRotation();
     knob2.setCurrentRotation();
     knob1.setCurrentRotation(); 
+    // Set the state of the joystick button object
+    joystickButton.setCurrentState();
+
+    if(joystickButton.isPressed()) {
+      //set this board to be the sender
+      __atomic_store_n(&isReceiverBoard, true, __ATOMIC_RELAXED);
+      //send message to tell other boards to be receivers
+      uint8_t TX_Message[8] = {0};
+      TX_Message[0] = 'S';
+      xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    }
 
     // Delay the next execution until new initiation according to xFrequency
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -361,6 +387,15 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.setCursor(30,30);
     u8g2.print(knob1.getRotation()); 
 
+    char* senderOrReceiver;
+    if(isReceiverBoard) {
+      senderOrReceiver = "R";
+    } else {
+      senderOrReceiver = "S";
+    }
+    u8g2.setCursor(2,30);
+    u8g2.print(senderOrReceiver);
+    
     // Print CAN bus messages
     u8g2.drawStr(75,10, "CAN:"); 
     u8g2.setCursor(100,10);
@@ -394,15 +429,21 @@ void decodeTask(void * pvParameters) {
       memcpy((void*) &RX_Message, &localRX_Message, sizeof(localRX_Message));
     xSemaphoreGive(RX_MessageMutex);
 
-    bool is_press = (RX_Message[0]=='P');
-    if(is_press) {
-      int32_t localCurrentStepSize = 0;
-      // Set the note accordingly
-      localCurrentStepSize = stepSizes[RX_Message[2]];
-      localCurrentStepSize = shiftByOctave(localCurrentStepSize, RX_Message[1]);
-      __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
-    } else {
-      __atomic_store_n(&currentStepSize, 0, __ATOMIC_RELAXED);
+    if(RX_Message[0]=='S') {
+      // Set the current board as a sender
+      __atomic_store_n(&isReceiverBoard, false, __ATOMIC_RELAXED);
+    }
+
+    if(isReceiverBoard) {
+      if(RX_Message[0]=='P') {
+        int32_t localCurrentStepSize = 0;
+        // Set the note accordingly
+        localCurrentStepSize = stepSizes[RX_Message[2]];
+        localCurrentStepSize = shiftByOctave(localCurrentStepSize, RX_Message[1]);
+        __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+      } else if (RX_Message[0]=='R') {
+        __atomic_store_n(&currentStepSize, 0, __ATOMIC_RELAXED);
+      }
     }
   }
 }
