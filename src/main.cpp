@@ -3,48 +3,49 @@
 #include <STM32FreeRTOS.h>
 #include <math.h>
 #include "knob.hpp"
-#include<ES_CAN.h>
+#include "sample_library.hpp"
+#include <ES_CAN.h>
 
 //Constants
-  const uint32_t interval = 100; //Display update interval
+const uint32_t interval = 100; //Display update interval
 
 //Key Matrix knob locations
-  const int knob3Row = 3;
-  const int knob2Row = 3;
-  const int knob1Row = 4;
-  const int knob0Row = 4;
-  const int knob3FCol = 0;
-  const int knob2FCol = 2;
-  const int knob1FCol = 0;
-  const int knob0FCol = 2;
+const int knob3Row = 3;
+const int knob2Row = 3;
+const int knob1Row = 4;
+const int knob0Row = 4;
+const int knob3FCol = 0;
+const int knob2FCol = 2;
+const int knob1FCol = 0;
+const int knob0FCol = 2;
 
 //Pin definitions
-  //Row select and enable
-  const int RA0_PIN = D3;
-  const int RA1_PIN = D6;
-  const int RA2_PIN = D12;
-  const int REN_PIN = A5;
+//Row select and enable
+const int RA0_PIN = D3;
+const int RA1_PIN = D6;
+const int RA2_PIN = D12;
+const int REN_PIN = A5;
 
-  //Matrix input and output
-  const int C0_PIN = A2;
-  const int C1_PIN = D9;
-  const int C2_PIN = A6;
-  const int C3_PIN = D1;
-  const int OUT_PIN = D11;
+//Matrix input and output
+const int C0_PIN = A2;
+const int C1_PIN = D9;
+const int C2_PIN = A6;
+const int C3_PIN = D1;
+const int OUT_PIN = D11;
 
-  //Audio analogue out
-  const int OUTL_PIN = A4;
-  const int OUTR_PIN = A3;
+//Audio analogue out
+const int OUTL_PIN = A4;
+const int OUTR_PIN = A3;
 
-  //Joystick analogue in
-  const int JOYY_PIN = A0;
-  const int JOYX_PIN = A1;
+//Joystick analogue in
+const int JOYY_PIN = A0;
+const int JOYX_PIN = A1;
 
-  //Output multiplexer bits
-  const int DEN_BIT = 3;
-  const int DRST_BIT = 4;
-  const int HKOW_BIT = 5;
-  const int HKOE_BIT = 6;
+//Output multiplexer bits
+const int DEN_BIT = 3;
+const int DRST_BIT = 4;
+const int HKOW_BIT = 5;
+const int HKOE_BIT = 6;
 
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
@@ -54,6 +55,24 @@ QueueHandle_t msgInQ;
 
 // Global Message variable (temporary, changed to Mutex later)
 uint8_t RX_Message[8]={0};
+
+// Vector of keys that are played
+// How to mix multiple keys?
+int speakerVoltage;
+
+/*/////////////////////////////
+
+have a time accumulator unsigned, which just goes to 0, when overflowing
+
+5000Hz
+
+wave is sampled at 22000Hz
+
+there are 4.4 
+
+////////////////////////////*/
+Sound * sin1000 = generate_sinusoid(5000);
+
 
 //Function to set outputs using key matrix
 void setOutMuxBit(const uint8_t bitIdx, const bool value) {
@@ -200,10 +219,12 @@ void setCurrentStepSize() {
         }
     }
   }
-  int octave = knob2.getRotation();
-  localCurrentStepSize = shiftByOctave(localCurrentStepSize, octave);
-  __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
-  // equivalent to currentStepSize = localCurrentStepSize;
+  if (localCurrentStepSize!=0) {
+    int octave = knob2.getRotation();
+    localCurrentStepSize = shiftByOctave(localCurrentStepSize, octave);
+    __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+    // equivalent to currentStepSize = localCurrentStepSize;
+  }
 }
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
@@ -235,13 +256,21 @@ const char* getCurrentKey() {
 
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
-  // Build a sawtooth waveform
-  static int32_t phaseAcc = 0;
-  phaseAcc += currentStepSize;
-  int32_t Vout = phaseAcc >> 24;
-  // Adjust the volume based on the volume controller
-  Vout = Vout >> (8 - knob3.getRotation()/2);
-  analogWrite(OUTR_PIN, Vout + 128);
+  static uint16_t time_acc = 0;
+  if(time_acc==sin1000->waveform_length) {
+    time_acc=0;
+  }
+  time_acc+=1;
+  //int out_voltage = wave_stored[time_acc];
+  int out_voltage;
+  if(time_acc<=sin1000->waveform_length) {
+    out_voltage = sin1000->waveform[time_acc];
+  } else {
+    out_voltage = 0;
+  }
+  // Serial.println(out_voltage);
+  out_voltage = out_voltage >> (8-knob3.getRotation()/2);
+  analogWrite(OUTR_PIN, out_voltage);
 }
 
 // CAN Bus Message Queue ISR Writer
@@ -395,16 +424,17 @@ void displayUpdateTask(void * pvParameters) {
 /// THREAD: Decode Thread for CAN Bus Communications
 void decodeTask(void * pvParameters) {
   while(1) {
-    xQueueReceive(msgInQ, RX_Message, portMAX_DELAY);
     bool is_press = (RX_Message[0]=='P');
     if(is_press) {
       int32_t localCurrentStepSize = 0;
       // Set the note accordingly
       localCurrentStepSize = stepSizes[RX_Message[2]];
+      localCurrentStepSize = shiftByOctave(localCurrentStepSize, RX_Message[1]);
       __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
     } else {
       __atomic_store_n(&currentStepSize, 0, __ATOMIC_RELAXED);
     }
+    xQueueReceive(msgInQ, RX_Message, portMAX_DELAY);
   }
 }
 
@@ -496,7 +526,7 @@ void setup() {
   );
 
   // Initialise CAN bus
-  CAN_Init(false);
+  CAN_Init(true);
 
   CAN_RegisterRX_ISR(CAN_RX_ISR);
   msgInQ = xQueueCreate(36,8);
@@ -506,7 +536,6 @@ void setup() {
 
   // Start the RTOS scheduler to run the threads
   vTaskStartScheduler();
-  
 }
 
 void loop() {
