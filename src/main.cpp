@@ -6,9 +6,6 @@
 #include "button.hpp"
 #include<ES_CAN.h>
 
-//Constants
-  const uint32_t interval = 100; //Display update interval
-
 //Key Matrix knobs locations
   const int knob3Row = 3;
   const int knob2Row = 3;
