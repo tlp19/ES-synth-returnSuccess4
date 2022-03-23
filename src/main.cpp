@@ -4,7 +4,7 @@
 #include <math.h>
 #include "knob.hpp"
 #include "button.hpp"
-#include<ES_CAN.h>
+#include <ES_CAN.h>
 
 //Key Matrix knobs locations
   const int knob3Row = 3;
