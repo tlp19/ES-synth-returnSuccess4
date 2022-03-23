@@ -181,6 +181,9 @@ SemaphoreHandle_t RX_MessageMutex;
 // Global Message variable
 volatile uint8_t RX_Message[8] = {0};
 
+
+volatile uint8_t vibrato;
+
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
   // Local variable for currentStepSize
@@ -429,6 +432,8 @@ void joystick(void * pvParameters) {
     Serial.print("y-axis: ");
     Serial.println(analogRead(A0));
 
+
+
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
   }
 }
@@ -509,7 +514,7 @@ void setup() {
     "displayUpdate",
     256,
     NULL,
-    2,
+    1,
     &displayUpdateHandle
   );
 
@@ -531,7 +536,7 @@ void setup() {
     "joystick",
     64,
     NULL,
-    1,
+    2,
     &joystickHandle
   );
 
