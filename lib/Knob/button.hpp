@@ -9,6 +9,9 @@ using namespace std;
 extern volatile uint8_t keyArray[7];
 extern SemaphoreHandle_t keyArrayMutex;
 
+/// Takes in as argument:
+///  - int row: The row index of the button in the key matrix
+///  - int firstColumn: The column index of the button in the key matrix
 class Button {
   private:
     int row;
@@ -22,22 +25,22 @@ class Button {
         pressed = false;
     }
 
-    /// Analyse the output of the keymatrix read and compute the rotation of the knob
+    /// Analyse the output of the keymatrix read and compute the state of the button
     void setCurrentState() volatile {
-        // Get the 4rth byte of keyArray (where the data about the piano key presses is)
+        // Get the row of the keyArray where the data about the button press is
         uint8_t keyArrayR;
         xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
         memcpy(&keyArrayR, (void*) &keyArray[row], sizeof(keyArray[row]));
         xSemaphoreGive(keyArrayMutex);
 
-        // Iterate through the last 2 bits of the row's value to get the currentRotationState
-        // Stored as {A,B}, so reverse from lab notes
+        // Take the binary number at the right column index
         int currentPressedState = !((keyArrayR >> column) & 0x01);
 
-        // Set the new rotation value using atomic store
+        // Set the new state value using atomic store
         __atomic_store_n(&pressed, currentPressedState, __ATOMIC_RELAXED);
     }
 
+    /// Returns if the Button is being pressed or not
     bool isPressed() volatile {
         return pressed;
     }

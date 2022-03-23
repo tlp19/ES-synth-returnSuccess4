@@ -177,12 +177,12 @@ volatile uint8_t keyArray[7];
 volatile uint8_t keyArray_prev[3] = {1,1,1};
 
 // Global object for Knob 3
-volatile Knob knob3 = Knob(knob3Row, knob3FCol, 0, 16);
+volatile Knob knob3 = Knob(knob3Row, knob3FCol, 1, 16, false);
 volatile Button knob3Button = Button(knob3ButtonRow, knob3ButtonCol);
 // Global object for Knob 2
-volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9);
+volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9, false);
 // Global object for Knob 1
-volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
+volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5, true);
 
 // Global object for Joystick button
 volatile Button joystickButton = Button(joystickButtonRow, joystickButtonCol);
