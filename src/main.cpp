@@ -9,7 +9,7 @@
 //Constants
   const uint32_t interval = 100; //Display update interval
 
-//Key Matrix knob locations
+//Key Matrix knobs locations
   const int knob3Row = 3;
   const int knob2Row = 3;
   const int knob1Row = 4;
@@ -18,6 +18,10 @@
   const int knob2FCol = 2;
   const int knob1FCol = 0;
   const int knob0FCol = 2;
+
+//Key Matrix knob buttons location
+ const int knob3ButtonRow = 5;
+ const int knob3ButtonCol = 1;
 
 //Key Matrix joystick button location
  const int joystickButtonRow = 5;
@@ -174,6 +178,7 @@ volatile uint8_t keyArray_prev[3] = {1,1,1};
 
 // Global object for Knob 3
 volatile Knob knob3 = Knob(knob3Row, knob3FCol, 0, 16);
+volatile Button knob3Button = Button(knob3ButtonRow, knob3ButtonCol);
 // Global object for Knob 2
 volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9);
 // Global object for Knob 1
@@ -182,8 +187,11 @@ volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
 // Global object for Joystick button
 volatile Button joystickButton = Button(joystickButtonRow, joystickButtonCol);
 
-// Global boolean to know if the board is a sender or receiver
-volatile bool isReceiverBoard = true;
+// Board state variables:
+  // Global boolean to know if the board is muted or not
+  volatile bool isMuted = false;
+  // Global boolean to know if the board is a sender or receiver
+  volatile bool isReceiverBoard = true;
 
 // CAN Bus Message Receive Queue
 QueueHandle_t msgInQ;
@@ -288,13 +296,15 @@ const char* getCurrentKey() {
 
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
-  // Build a sawtooth waveform
-  static int32_t phaseAcc = 0;
-  phaseAcc += currentStepSize;
-  int32_t Vout = phaseAcc >> 24;
-  // Adjust the volume based on the volume controller
-  Vout = Vout >> (8 - knob3.getRotation()/2);
-  analogWrite(OUTR_PIN, Vout + 128);
+  if(!isMuted){
+    // Build a sawtooth waveform
+    static int32_t phaseAcc = 0;
+    phaseAcc += currentStepSize;
+    int32_t Vout = phaseAcc >> 24;
+    // Adjust the volume based on the volume controller
+    Vout = Vout >> (8 - knob3.getRotation()/2);
+    analogWrite(OUTR_PIN, Vout + 128);
+  }
 }
 
 // CAN Bus Message Queue ISR Writer
@@ -340,7 +350,9 @@ void scanKeysTask(void * pvParameters) {
     // Set the current rotation of knob 3, according to the key matrix
     knob3.setCurrentRotation();
     knob2.setCurrentRotation();
-    knob1.setCurrentRotation(); 
+    knob1.setCurrentRotation();
+    // Set the state of the knob button objects
+    knob3Button.setCurrentState();
     // Set the state of the joystick button object
     joystickButton.setCurrentState();
 
@@ -351,6 +363,13 @@ void scanKeysTask(void * pvParameters) {
       uint8_t TX_Message[8] = {0};
       TX_Message[0] = 'S';
       xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    }
+
+    static uint32_t lastSwitched = 0;
+    if(knob3Button.isPressed() && ((micros()-lastSwitched) > 500000)) { //can't switch more than once every 0.5s
+      // Change the mute state of the board
+      __atomic_store_n(&isMuted, !isMuted, __ATOMIC_RELAXED);
+      lastSwitched = micros();
     }
 
     // Delay the next execution until new initiation according to xFrequency
@@ -377,8 +396,13 @@ void displayUpdateTask(void * pvParameters) {
 
     // Print the knobs rotation to the screen
     u8g2.drawStr(90,30, "Vol:"); 
-    u8g2.setCursor(116,30);
-    u8g2.print(knob3.getRotation()); 
+    if(!isMuted){
+      u8g2.setCursor(116,30);
+      u8g2.print(knob3.getRotation()); 
+    } else {
+      u8g2.drawStr(116,30, "X"); 
+    }
+
 
     u8g2.drawStr(50,30, "Oct:"); 
     u8g2.setCursor(76,30);
@@ -389,9 +413,9 @@ void displayUpdateTask(void * pvParameters) {
 
     char* senderOrReceiver;
     if(isReceiverBoard) {
-      senderOrReceiver = "R";
+      senderOrReceiver = (char*)"R";
     } else {
-      senderOrReceiver = "S";
+      senderOrReceiver = (char*)"S";
     }
     u8g2.setCursor(2,30);
     u8g2.print(senderOrReceiver);
