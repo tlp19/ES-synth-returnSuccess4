@@ -17,7 +17,7 @@ struct Octave{
 
     Octave(vector<float> frequency){
         for(int i=0; i<12; i++){
-            sounds[i] = generate_sinusoid(frequency[i]);
+            sounds[i] = generate_sinusoid(freq[i]);
         }
     }
 };

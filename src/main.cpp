@@ -168,6 +168,8 @@ int32_t shiftByOctave(int32_t frequency, int octave) {
 const float freq [] = {computeStepSize(440, -9), computeStepSize(440, -8), computeStepSize(440, -7), computeStepSize(440, -6), computeStepSize(440, -5),computeStepSize(440, -4), computeStepSize(440, -3), computeStepSize(440, -2), computeStepSize(440, -1), computeStepSize(440, 0), computeStepSize(440, 1), computeStepSize(440, 2)};
 const char* keysList [] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
+volatile oct_
+
 volatile int index = 0;
 
 // Store the current stepSize in a volatile variable
