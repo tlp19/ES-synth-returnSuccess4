@@ -227,7 +227,7 @@ void setCurrentStepSize() {
         bool keyNowSelected = !(((keyArrayI >> j)) & 0x01);
         bool keyPrevSelected = !(((keyArray_prevI >> j)) & 0x01);
         // If the key state changed
-        if(keyNowSelected != keyPrevSelected) {
+        //if(keyNowSelected != keyPrevSelected) {
           if(keyNowSelected) {
             // Key is pressed
             TX_Message[0] = 'P';
@@ -249,7 +249,7 @@ void setCurrentStepSize() {
             // "assignment" of keyArray_prev[i] using memcpy
             memcpy((void*) &keyArray_prev[i], &keyArray_prevI, sizeof(keyArray_prevI));
           xSemaphoreGive(keyArrayMutex);
-        }
+        //}
       }
       
       if(isReceiverBoard){
@@ -327,7 +327,7 @@ void scanKeysTask(void * pvParameters) {
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
 
   // Body of the thread (i.e. what it does)
-  while(1){
+  //while(1){
     // Perform reading of the key matrix
     for (int i=0 ; i<=6 ; i++) {
       // Select the row in the matrix we want to read from
@@ -371,8 +371,8 @@ void scanKeysTask(void * pvParameters) {
     }
 
     // Delay the next execution until new initiation according to xFrequency
-    vTaskDelayUntil(&xLastWakeTime, xFrequency);
-  }
+    //vTaskDelayUntil(&xLastWakeTime, xFrequency);
+  //}
 }
 
 // THREAD: Update the display on the device
@@ -531,52 +531,52 @@ void setup() {
   TIM_TypeDef *Instance = TIM1;
   HardwareTimer *sampleTimer = new HardwareTimer(Instance);
   sampleTimer->setOverflow(22000, HERTZ_FORMAT);
-  sampleTimer->attachInterrupt(sampleISR);
+ // sampleTimer->attachInterrupt(sampleISR);
   sampleTimer->resume();
 
   // Initialize the thread to scan keys and set the currentStepSize
   TaskHandle_t scanKeysHandle = NULL;
-  xTaskCreate(
-    scanKeysTask,
-    "scanKeys",
-    64,
-    NULL,
-    4,
-    &scanKeysHandle
-  );
+  // xTaskCreate(
+  //   scanKeysTask,
+  //   "scanKeys",
+  //   64,
+  //   NULL,
+  //   4,
+  //   &scanKeysHandle
+  // );
 
     // Initialize the thread to scan keys and set the currentStepSize
   TaskHandle_t displayUpdateHandle = NULL;
-  xTaskCreate(
-    displayUpdateTask,
-    "displayUpdate",
-    256,
-    NULL,
-    1,
-    &displayUpdateHandle
-  );
+  // xTaskCreate(
+  //   displayUpdateTask,
+  //   "displayUpdate",
+  //   256,
+  //   NULL,
+  //   1,
+  //   &displayUpdateHandle
+  // );
 
   // Initialize the thread to decode messages from the CAN Bus
   TaskHandle_t decodeHandle = NULL;
-  xTaskCreate(
-    decodeTask,
-    "decode",
-    256,
-    NULL,
-    2,
-    &decodeHandle
-  );
+  // xTaskCreate(
+  //   decodeTask,
+  //   "decode",
+  //   256,
+  //   NULL,
+  //   2,
+  //   &decodeHandle
+  // );
 
   // Initialize the thread to send messages to the CAN Bus
   TaskHandle_t CAN_TX_Handle = NULL;
-  xTaskCreate(
-    CAN_TX_Task,
-    "CAN_TX",
-    256,
-    NULL,
-    3,
-    &CAN_TX_Handle
-  );
+  // xTaskCreate(
+  //   CAN_TX_Task,
+  //   "CAN_TX",
+  //   256,
+  //   NULL,
+  //   3,
+  //   &CAN_TX_Handle
+  // );
 
     // Initialise CAN bus mode: true for single-board (loopback), false for multi-board
   CAN_Init(false);
