@@ -325,7 +325,6 @@ void scanKeysTask(void * pvParameters) {
   // Define parameters for how to run the thread
   const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
-
   // Body of the thread (i.e. what it does)
   //while(1){
     // Perform reading of the key matrix
@@ -354,21 +353,21 @@ void scanKeysTask(void * pvParameters) {
     // Set the state of the joystick button object
     joystickButton.setCurrentState();
 
-    if(joystickButton.isPressed()) {
+    //if(joystickButton.isPressed()) {
       //set this board to be the sender
       __atomic_store_n(&isReceiverBoard, true, __ATOMIC_RELAXED);
       //send message to tell other boards to be receivers
       uint8_t TX_Message[8] = {0};
       TX_Message[0] = 'S';
       xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
-    }
+    //}
 
     static uint32_t lastSwitched = 0;
-    if(knob3Button.isPressed() && ((micros()-lastSwitched) > 500000)) { //can't switch more than once every 0.5s
+    //if(knob3Button.isPressed() && ((micros()-lastSwitched) > 500000)) { //can't switch more than once every 0.5s
       // Change the mute state of the board
       __atomic_store_n(&isMuted, !isMuted, __ATOMIC_RELAXED);
       lastSwitched = micros();
-    }
+    //}
 
     // Delay the next execution until new initiation according to xFrequency
     //vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -508,7 +507,7 @@ void setup() {
 
   //Initialise UART
   Serial.begin(9600);
-  Serial.println("Hello World");
+  Serial.println("Start of UART");
 
 
   // ------ INITIALIZE COMMON RESSOURCES -----
@@ -523,7 +522,8 @@ void setup() {
   // ------ INITIALIZE QUEUES ------
 
   msgInQ = xQueueCreate(36,8);
-  msgOutQ = xQueueCreate(36,8);
+  //msgOutQ = xQueueCreate(36,8);
+  msgOutQ = xQueueCreate(384,8);
 
   // ---- INITIALIZE INTERRUPTS AND THREADS: ----
 
@@ -535,7 +535,7 @@ void setup() {
   sampleTimer->resume();
 
   // Initialize the thread to scan keys and set the currentStepSize
-  TaskHandle_t scanKeysHandle = NULL;
+  //TaskHandle_t scanKeysHandle = NULL;
   // xTaskCreate(
   //   scanKeysTask,
   //   "scanKeys",
@@ -546,7 +546,7 @@ void setup() {
   // );
 
     // Initialize the thread to scan keys and set the currentStepSize
-  TaskHandle_t displayUpdateHandle = NULL;
+  //TaskHandle_t displayUpdateHandle = NULL;
   // xTaskCreate(
   //   displayUpdateTask,
   //   "displayUpdate",
@@ -557,7 +557,7 @@ void setup() {
   // );
 
   // Initialize the thread to decode messages from the CAN Bus
-  TaskHandle_t decodeHandle = NULL;
+  //TaskHandle_t decodeHandle = NULL;
   // xTaskCreate(
   //   decodeTask,
   //   "decode",
@@ -568,7 +568,7 @@ void setup() {
   // );
 
   // Initialize the thread to send messages to the CAN Bus
-  TaskHandle_t CAN_TX_Handle = NULL;
+  //TaskHandle_t CAN_TX_Handle = NULL;
   // xTaskCreate(
   //   CAN_TX_Task,
   //   "CAN_TX",
@@ -579,7 +579,7 @@ void setup() {
   // );
 
     // Initialise CAN bus mode: true for single-board (loopback), false for multi-board
-  CAN_Init(false);
+  CAN_Init(true);
 
   // Interrupt when receiving a CAN message
   CAN_RegisterRX_ISR(CAN_RX_ISR);
@@ -588,6 +588,13 @@ void setup() {
 
   setCANFilter(0x123,0x7ff);
   CAN_Start();
+
+  Serial.println("Benchmark of scanKeysTask:");
+  uint32_t startTime = micros();
+  for (int i = 0 ; i<32 ; i++) {
+    scanKeysTask(NULL);
+  }
+  Serial.println(micros()-startTime);
 
   // Start the RTOS scheduler to run the threads
   vTaskStartScheduler();
