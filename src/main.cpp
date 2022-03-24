@@ -5,6 +5,7 @@
 #include "knob.hpp"
 #include "button.hpp"
 #include <ES_CAN.h>
+#include <sample_library.h>
 
 
 //Key Matrix knobs locations
@@ -145,23 +146,30 @@ uint8_t readCols() {
 }
 
 /// Compute the stepsizes, based on a base frequency and a key index
-int32_t computeStepSize(double freq, int offset) {
+int32_t computeStepSize(double frequency, int offset) {
   int32_t sampl_freq = 22000;
-  int32_t stepSize = (pow(2, 32) * freq) / sampl_freq;
   float offset_factor = pow(2.0, (1.0/12.0));
-  return stepSize * pow(offset_factor, offset);
+  return frequency * pow(offset_factor, offset);
 }
 
-int32_t shiftByOctave(int32_t stepSize, int octave) {
-  if ((octave-4) >= 0) {
-    return stepSize = (stepSize << (octave-4));
-  } else {
-    return stepSize = (stepSize >> -(octave-4));
+int32_t shiftByOctave(int32_t frequency, int octave) {
+  for(int i = 0; i<12; i++){
+    if ((octave-4) >= 0) {
+      return frequency = (frequency << (octave-4));
+    } else {
+      return frequency = (frequency >> -(octave-4));
+    }
   }
 }
 
-const int32_t stepSizes [] = {computeStepSize(440, -9), computeStepSize(440, -8), computeStepSize(440, -7), computeStepSize(440, -6), computeStepSize(440, -5),computeStepSize(440, -4), computeStepSize(440, -3), computeStepSize(440, -2), computeStepSize(440, -1), computeStepSize(440, 0), computeStepSize(440, 1), computeStepSize(440, 2)};
+////////////////////////////*/
+//Sound * sin1000 = generate_sinusoid(5000);
+
+const float freq [] = {computeStepSize(440, -9), computeStepSize(440, -8), computeStepSize(440, -7), computeStepSize(440, -6), computeStepSize(440, -5),computeStepSize(440, -4), computeStepSize(440, -3), computeStepSize(440, -2), computeStepSize(440, -1), computeStepSize(440, 0), computeStepSize(440, 1), computeStepSize(440, 2)};
 const char* keysList [] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+
+volatile int index = 0;
+
 // Store the current stepSize in a volatile variable
 volatile int32_t currentStepSize = 0;
 // Store the currentKey being played
@@ -205,6 +213,12 @@ SemaphoreHandle_t CAN_TX_Semaphore;
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
+
+  for(int j=0; j<12; j++){
+    
+  }
+  currentOctave = Octave(shiftByOctave(freq, knob2.getRotation()));
+
   // Local variable for currentStepSize
   int32_t localCurrentStepSize;
   // CAN Bus transmissable message
@@ -231,8 +245,9 @@ void setCurrentStepSize() {
           if(keyNowSelected) {
             // Key is pressed
             TX_Message[0] = 'P';
-            localCurrentStepSize = stepSizes[i*4+j];
-            localCurrentStepSize = shiftByOctave(localCurrentStepSize, knob2.getRotation());
+            localCurrentStepSize = Sound *Octave currentOctave->sounds[i*4+j];
+            //localCurrentStepSize = shiftByOctave(localCurrentStepSize, knob2.getRotation());
+
           } else {
             // Key is released
             TX_Message[0] = 'R';
@@ -295,13 +310,27 @@ const char* getCurrentKey() {
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
   if(!isMuted){
+    /*
     // Build a sawtooth waveform
     static int32_t phaseAcc = 0;
     phaseAcc += currentStepSize;
     int32_t Vout = phaseAcc >> 24;
+    */
+
+    static uint16_t time_acc = 0;
+    time_acc = time_acc%(currentStepSize->waveform_length);
+    time_acc+=1;
+    //int out_voltage = wave_stored[time_acc];
+    int Vout;
+    if(time_acc<=sin1000->waveform_length) {
+      Vout = sin1000->waveform[time_acc];
+      } else {
+        Vout = 0;
+      }
+
     // Adjust the volume based on the volume controller
     Vout = Vout >> (8 - knob3.getRotation()/2);
-    analogWrite(OUTR_PIN, Vout + 128);
+    analogWrite(OUTR_PIN, Vout); // REPLACE with Vout+128
   }
 }
 
@@ -460,7 +489,7 @@ void decodeTask(void * pvParameters) {
       if(RX_Message[0]=='P') {
         int32_t localCurrentStepSize = 0;
         // Set the note accordingly
-        localCurrentStepSize = stepSizes[RX_Message[2]];
+        localCurrentStepSize = freq[RX_Message[2]];
         localCurrentStepSize = shiftByOctave(localCurrentStepSize, RX_Message[1]);
         __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
       } else if (RX_Message[0]=='R') {
