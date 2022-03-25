@@ -87,7 +87,7 @@ class Knob {
     }
 
     /// Analyse the output of the keymatrix read and compute the rotation of the knob
-    void setCurrentRotation() volatile {
+    void updateCurrentRotation() volatile {
         // Define local variables
         uint8_t currentRotationState = 0b00;
         int localRotation = rotation;

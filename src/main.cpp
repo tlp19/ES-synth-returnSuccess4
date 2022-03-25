@@ -3,7 +3,9 @@
 #include <STM32FreeRTOS.h>
 #include <math.h>
 #include "knob.hpp"
+#include "can_knob.hpp"
 #include "button.hpp"
+#include "detect.hpp"
 #include <ES_CAN.h>
 
 
@@ -175,21 +177,28 @@ volatile uint8_t keyArray[7];
 volatile uint8_t keyArray_prev[3] = {1,1,1};
 
 // Global object for Knob 3
-volatile Knob knob3 = Knob(knob3Row, knob3FCol, 1, 16, false);
+volatile CAN_Knob knob3 = CAN_Knob(3, knob3Row, knob3FCol, 1, 16, false);
 volatile Button knob3Button = Button(knob3ButtonRow, knob3ButtonCol);
 // Global object for Knob 2
-volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9, false);
+volatile CAN_Knob knob2 = CAN_Knob(2, knob2Row, knob2FCol, 0, 9, false);
 // Global object for Knob 1
 volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5, true);
 
 // Global object for Joystick button
 volatile Button joystickButton = Button(joystickButtonRow, joystickButtonCol);
 
+volatile Detect westDetect = Detect(5,3);
+volatile Detect eastDetect = Detect(6,3);
+
 // Board state variables:
   // Global boolean to know if the board is muted or not
   volatile bool isMuted = false;
   // Global boolean to know if the board is a sender or receiver
   volatile bool isReceiverBoard = true;
+  // Global boolean to know if there is a Middle board in the keyboards configuration
+  volatile uint32_t lastMiddleCANRX = 0;
+
+  volatile uint8_t boardIndex = 0;
 
 // CAN Bus Message Receive Queue
 QueueHandle_t msgInQ;
@@ -346,9 +355,9 @@ void scanKeysTask(void * pvParameters) {
     // Set the current stepSize, according to the key matrix
     setCurrentStepSize();
     // Set the current rotation of knob 3, according to the key matrix
-    knob3.setCurrentRotation();
-    knob2.setCurrentRotation();
-    knob1.setCurrentRotation();
+    knob3.updateCurrentRotation();
+    knob2.updateCurrentRotation();
+    knob1.updateCurrentRotation();
     // Set the state of the knob button objects
     knob3Button.setCurrentState();
     // Set the state of the joystick button object
@@ -361,13 +370,45 @@ void scanKeysTask(void * pvParameters) {
       uint8_t TX_Message[8] = {0};
       TX_Message[0] = 'S';
       xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+      //synchronize the octaves and volumes of all the boards
+      knob2.sendRotationCANMsg();
+      knob3.sendRotationCANMsg();
     }
 
     static uint32_t lastSwitched = 0;
-    if(knob3Button.isPressed() && ((micros()-lastSwitched) > 500000)) { //can't switch more than once every 0.5s
+    if(knob3Button.isPressed() && ((millis()-lastSwitched) > 500)) { //can't switch more than once every 0.5s
       // Change the mute state of the board
       __atomic_store_n(&isMuted, !isMuted, __ATOMIC_RELAXED);
       lastSwitched = micros();
+    }
+
+    westDetect.writeToPin(true);
+    eastDetect.writeToPin(true);
+
+    delayMicroseconds(5);
+
+    westDetect.readFromPin();
+    eastDetect.readFromPin();
+
+    static uint32_t lastMiddleCANSent = 0;
+    if(westDetect.getState() && eastDetect.getState()){
+      // The board has index 1
+      __atomic_store_n(&boardIndex, 1, __ATOMIC_RELAXED);
+      if ((millis()-lastMiddleCANSent) > 50) {
+        //send message to tell other boards there is a Middle
+        uint8_t TX_Message[8] = {0};
+        TX_Message[0] = 'M';
+        xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+      }
+    } else if(!westDetect.getState() && eastDetect.getState()) {
+      __atomic_store_n(&boardIndex, 0, __ATOMIC_RELAXED);
+    }
+    else if(westDetect.getState() && !eastDetect.getState()) {
+      if ((millis()-lastMiddleCANRX) < 500) {
+        __atomic_store_n(&boardIndex, 2, __ATOMIC_RELAXED);
+      } else {
+        __atomic_store_n(&boardIndex, 1, __ATOMIC_RELAXED);
+      }
     }
 
     // Delay the next execution until new initiation according to xFrequency
@@ -391,6 +432,17 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.drawStr(2,10, "Key:"); 
     const char* key = getCurrentKey();
     u8g2.drawStr(30,10, key); 
+
+    // Print the current local key to the screen
+    u8g2.drawStr(2,20, "WE:"); 
+    u8g2.setCursor(30,20);
+    u8g2.print(westDetect.getState());
+    u8g2.setCursor(40,20);
+    u8g2.print(eastDetect.getState());
+
+    u8g2.drawStr(60,20, "Idx:"); 
+    u8g2.setCursor(80,20);
+    u8g2.print(boardIndex);
 
     // Print the knobs rotation to the screen
     u8g2.drawStr(90,30, "Vol:"); 
@@ -454,6 +506,23 @@ void decodeTask(void * pvParameters) {
     if(RX_Message[0]=='S') {
       // Set the current board as a sender
       __atomic_store_n(&isReceiverBoard, false, __ATOMIC_RELAXED);
+    }
+    
+    if(RX_Message[0]=='M') {
+      // Update the lastMiddleCANRX to be now
+      __atomic_store_n(&lastMiddleCANRX, millis(), __ATOMIC_RELAXED);
+    } else if((RX_Message[0]=='S')||(RX_Message[0]=='K')) {
+      int senderIndex = RX_Message[1];
+      int knobIndex = RX_Message[2];
+      int knobValue = RX_Message[3];
+      if(knobIndex == 2) {
+        // Assign the octave according to position of board
+        int newOctave = knobValue + (boardIndex - senderIndex);
+        knob2.setRotation(newOctave);
+      } else if(knobIndex == 3) {
+        // Same volume for all boards
+        knob3.setRotation(knobValue);
+      }
     }
 
     if(isReceiverBoard) {
