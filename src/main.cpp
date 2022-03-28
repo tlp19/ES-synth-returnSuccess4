@@ -56,23 +56,7 @@ QueueHandle_t msgInQ;
 // Global Message variable (temporary, changed to Mutex later)
 uint8_t RX_Message[8]={0};
 
-// Vector of keys that are played
-// How to mix multiple keys?
-int speakerVoltage;
-
-/*/////////////////////////////
-
-have a time accumulator unsigned, which just goes to 0, when overflowing
-
-5000Hz
-
-wave is sampled at 22000Hz
-
-there are 4.4 
-
-////////////////////////////*/
-Sound * sin1000 = generate_sinusoid(5000);
-
+Sound * sin1000 = generate_sinusoid(500);
 
 //Function to set outputs using key matrix
 void setOutMuxBit(const uint8_t bitIdx, const bool value) {
@@ -180,6 +164,20 @@ int32_t shiftByOctave(int32_t stepSize, int octave) {
 
 const int32_t stepSizes [] = {computeStepSize(440, -9), computeStepSize(440, -8), computeStepSize(440, -7), computeStepSize(440, -6), computeStepSize(440, -5),computeStepSize(440, -4), computeStepSize(440, -3), computeStepSize(440, -2), computeStepSize(440, -1), computeStepSize(440, 0), computeStepSize(440, 1), computeStepSize(440, 2)};
 const char* keysList [] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+
+/*
+- array contains frequencies of octave
+- Octave = array containing 12 Sound pointers
+- array contains key presses [0, 2, 5]
+
+- sampleISR --> depends on timestep
+- accumulating_sum = 
+
+
+Check and fix overflow 
+
+*/
+
 // Store the current stepSize in a volatile variable
 volatile int32_t currentStepSize = 0;
 // Store the currentKey being played
@@ -216,9 +214,11 @@ void setCurrentStepSize() {
         // If it is zero, then the key is being pressed
         if (isSelected) {
           localCurrentStepSize = stepSizes[i*4+j];
+
         }
     }
   }
+
   if (localCurrentStepSize!=0) {
     int octave = knob2.getRotation();
     localCurrentStepSize = shiftByOctave(localCurrentStepSize, octave);
@@ -260,18 +260,16 @@ void sampleISR() {
   if(time_acc==sin1000->waveform_length) {
     time_acc=0;
   }
-  time_acc+=1;
-  //int out_voltage = wave_stored[time_acc];
   int out_voltage;
   if(time_acc<=sin1000->waveform_length) {
     out_voltage = sin1000->waveform[time_acc];
-  } else {
-    out_voltage = 0;
   }
   // Serial.println(out_voltage);
   out_voltage = out_voltage >> (8-knob3.getRotation()/2);
-  analogWrite(OUTR_PIN, out_voltage);
+  analogWrite(OUTR_PIN, out_voltage+128);
+  time_acc+=1;
 }
+
 
 // CAN Bus Message Queue ISR Writer
 void CAN_RX_ISR (void) {
@@ -477,6 +475,7 @@ void setup() {
     Serial.print("]: ");
     Serial.println(stepSizes[i]);
   }
+
 
   // ------ INITIALIZE COMMON RESSOURCES -----
 
