@@ -18,7 +18,7 @@ struct Octave {
 // Helper functions that generate different waveforms on the fly, so that they don't everything has to be stored
 
 // Sinusoidal waveforms
-Sound * generate_sinusoid(int sin_freq) {
+Sound * generate_sinusoid(float sin_freq) {
     // The amount of data that needs to be stored depends on the sinusoid frequency, this can be optimised depending on frequency
     // constant waveform length for now
 
@@ -29,7 +29,7 @@ Sound * generate_sinusoid(int sin_freq) {
     int waveform_length = 10000;
     for(int l=1; l<10; l++) {
         double THRESH = 0.05;
-        double division_result = 22000.0/(float)sin_freq;
+        double division_result = 22000.0/sin_freq;
         double ideal_length = division_result*(float)l;
         double proposed_length = round(ideal_length);
         int deviation = abs(proposed_length - ideal_length);

@@ -6,6 +6,7 @@
 #include "can_knob.hpp"
 #include "button.hpp"
 #include "detect.hpp"
+#include "sample_library.hpp"
 #include <ES_CAN.h>
 
 const uint32_t interval = 100; //Display update interval
@@ -184,6 +185,23 @@ volatile int32_t currentStepSize = 0;
 // Store the currentKey being played
 volatile char* currentKey;
 
+// This is the new data structure, which is a 12-bit array which holds the current notes that are playing
+volatile bool notes_playing[12];
+const struct Octave currentOctave = {sounds:{
+  generate_sinusoid(523.2511),
+  generate_sinusoid(554.3653),
+  generate_sinusoid(587.3295),
+  generate_sinusoid(622.2540),
+  generate_sinusoid(659.2551),
+  generate_sinusoid(739.9888),
+  generate_sinusoid(783.9909),
+  generate_sinusoid(830.6094),
+  generate_sinusoid(880.0000),
+  generate_sinusoid(987.7666),
+  generate_sinusoid(1046.502),
+  generate_sinusoid(1108.731),
+  }};
+
 // Mutex to protect shared ressources
 SemaphoreHandle_t keyArrayMutex;
 // Reading from the keyboard
@@ -257,10 +275,15 @@ void setCurrentStepSize() {
             TX_Message[0] = 'P';
             localCurrentStepSize = stepSizes[i*4+j];
             localCurrentStepSize = shiftByOctave(localCurrentStepSize, knob2.getRotation());
+            // Update the array with notes that are currently playing
+            notes_playing[i*4+j] = true;
           } else {
             // Key is released
             TX_Message[0] = 'R';
             localCurrentStepSize = 0;
+            
+            // Update the array with notes that are currently playing
+            notes_playing[i*4+j] = false;
           }
           // Update the octave
           TX_Message[1] = knob2.getRotation();
@@ -273,6 +296,12 @@ void setCurrentStepSize() {
             // "assignment" of keyArray_prev[i] using memcpy
             memcpy((void*) &keyArray_prev[i], &keyArray_prevI, sizeof(keyArray_prevI));
           xSemaphoreGive(keyArrayMutex);
+
+          Serial.print("Notes playing: ");
+          for(int i=0; i<12; i++) {
+            Serial.print(notes_playing[i]);
+          }
+          Serial.println("");
         }
       }
       
@@ -318,14 +347,32 @@ const char* getCurrentKey() {
 
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
+  static uint16_t time_acc = 0;
+
   if(!isMuted){
-    // Build a sawtooth waveform
-    static int32_t phaseAcc = 0;
-    phaseAcc += currentStepSize;
-    int32_t Vout = phaseAcc >> 24;
-    // Adjust the volume based on the volume controller
-    Vout = Vout >> (8 - knob3.getRotation()/2);
-    analogWrite(OUTR_PIN, Vout + 128);
+
+    // Go through the notes playing array and add all the relevant waves together
+    int out_voltage;
+    int waveform_accumulator=0;
+    for(int i=0; i<12; i++) {
+      if(notes_playing[i]) {
+        int waveform_length = currentOctave.sounds[i]->waveform_length;
+        waveform_accumulator += currentOctave.sounds[i]->waveform[time_acc%waveform_length];
+      }
+    }
+
+    // Avoid clipping when multiple notes are played simultaneously
+    if(waveform_accumulator>128) {
+      waveform_accumulator=128;
+    }
+
+    // As the waves are in the range -128,+128 bring them back to 0,255
+    waveform_accumulator+128;
+
+    // Adjust the wave depending on the loudness knob setting
+    out_voltage = waveform_accumulator >> (8-knob3.getRotation()/2);
+    analogWrite(OUTR_PIN, out_voltage);
+    time_acc+=1;
   }
 }
 
