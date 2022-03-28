@@ -3,21 +3,30 @@
 #include <STM32FreeRTOS.h>
 #include <math.h>
 #include "knob.hpp"
-#include "sample_library.hpp"
+#include "can_knob.hpp"
+#include "button.hpp"
+#include "detect.hpp"
 #include <ES_CAN.h>
 
-//Constants
 const uint32_t interval = 100; //Display update interval
 
-//Key Matrix knob locations
-const int knob3Row = 3;
-const int knob2Row = 3;
-const int knob1Row = 4;
-const int knob0Row = 4;
-const int knob3FCol = 0;
-const int knob2FCol = 2;
-const int knob1FCol = 0;
-const int knob0FCol = 2;
+//Key Matrix knobs locations
+  const int knob3Row = 3;
+  const int knob2Row = 3;
+  const int knob1Row = 4;
+  const int knob0Row = 4;
+  const int knob3FCol = 0;
+  const int knob2FCol = 2;
+  const int knob1FCol = 0;
+  const int knob0FCol = 2;
+
+//Key Matrix knob buttons location
+ const int knob3ButtonRow = 5;
+ const int knob3ButtonCol = 1;
+
+//Key Matrix joystick button location
+ const int joystickButtonRow = 5;
+ const int joystickButtonCol = 2;
 
 //Pin definitions
 //Row select and enable
@@ -49,14 +58,6 @@ const int HKOE_BIT = 6;
 
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
-
-// CAN Bus Message Queue
-QueueHandle_t msgInQ;
-
-// Global Message variable (temporary, changed to Mutex later)
-uint8_t RX_Message[8]={0};
-
-Sound * sin1000 = generate_sinusoid(500);
 
 //Function to set outputs using key matrix
 void setOutMuxBit(const uint8_t bitIdx, const bool value) {
@@ -183,48 +184,109 @@ volatile int32_t currentStepSize = 0;
 // Store the currentKey being played
 volatile char* currentKey;
 
+// Mutex to protect shared ressources
+SemaphoreHandle_t keyArrayMutex;
 // Reading from the keyboard
 volatile uint8_t keyArray[7];
-SemaphoreHandle_t keyArrayMutex;
-
-// Global variable for rotation of Knob 3
-volatile Knob knob3 = Knob(knob3Row, knob3FCol, 0, 16);
-
-// Global variable for rotation of Knob 2
-volatile Knob knob2 = Knob(knob2Row, knob2FCol, 0, 9);
-
-// Global variable for rotation of Knob 2
-volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5);
-
 // Initialise the array with all unpressed
-volatile uint8_t keyArray_prev[7] = {1,1,1,1,1,1,1};
+volatile uint8_t keyArray_prev[3] = {1,1,1};
+
+// Global object for Knob 3
+volatile CAN_Knob knob3 = CAN_Knob(3, knob3Row, knob3FCol, 1, 16, false);
+volatile Button knob3Button = Button(knob3ButtonRow, knob3ButtonCol);
+// Global object for Knob 2
+volatile CAN_Knob knob2 = CAN_Knob(2, knob2Row, knob2FCol, 0, 9, false);
+// Global object for Knob 1
+volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5, true);
+
+// Global object for Joystick button
+volatile Button joystickButton = Button(joystickButtonRow, joystickButtonCol);
+
+volatile Detect westDetect = Detect(5,3);
+volatile Detect eastDetect = Detect(6,3);
+
+// Board state variables:
+  // Global boolean to know if the board is muted or not
+  volatile bool isMuted = false;
+  // Global boolean to know if the board is a sender or receiver
+  volatile bool isReceiverBoard = true;
+  // Global boolean to know if there is a Middle board in the keyboards configuration
+  volatile uint32_t lastMiddleCANRX = 0;
+
+  volatile uint8_t boardIndex = 0;
+
+// CAN Bus Message Receive Queue
+QueueHandle_t msgInQ;
+// Mutex to protect shared ressources
+SemaphoreHandle_t RX_MessageMutex;
+// Global Message variable
+volatile uint8_t RX_Message[8] = {0};
+
+// CAN Bus Message Receive Queue
+QueueHandle_t msgOutQ;
+// Mutex to protect shared ressources
+SemaphoreHandle_t CAN_TX_Semaphore;
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
 void setCurrentStepSize() {
-  int32_t localCurrentStepSize = 0;
+  // Local variable for currentStepSize
+  int32_t localCurrentStepSize;
+  // CAN Bus transmissable message
+  uint8_t TX_Message[8]= {0};
+
   // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
   for (int i=0 ; i <= 2 ; i++) {
     uint8_t keyArrayI;
+    uint8_t keyArray_prevI;
     xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
       memcpy(&keyArrayI, (void*) &keyArray[i], sizeof(keyArray[i]));
+      memcpy(&keyArray_prevI, (void*) &keyArray_prev[i], sizeof(keyArray_prev[i]));
     xSemaphoreGive(keyArrayMutex);
-    // Iterate through the last 4 bits of the row's value, checking each time if it is zero
-    for (int j=0 ; j <= 3 ; j++) {
-        bool isSelected = !(((keyArrayI >> j)) & 0x01);
-        // If it is zero, then the key is being pressed
-        if (isSelected) {
-          localCurrentStepSize = stepSizes[i*4+j];
 
+    // Check if the keyArray has changed
+    if(keyArrayI != keyArray_prevI) {
+      // Iterate through the last 4 bits of the row's value, checking each time if it is zero
+      for (int j=0 ; j <= 3 ; j++) {
+        // If it is one, then the key is being pressed
+        bool keyNowSelected = !(((keyArrayI >> j)) & 0x01);
+        bool keyPrevSelected = !(((keyArray_prevI >> j)) & 0x01);
+        // If the key state changed
+        if(keyNowSelected != keyPrevSelected) {
+          if(keyNowSelected) {
+            // Key is pressed
+            TX_Message[0] = 'P';
+            localCurrentStepSize = stepSizes[i*4+j];
+            localCurrentStepSize = shiftByOctave(localCurrentStepSize, knob2.getRotation());
+          } else {
+            // Key is released
+            TX_Message[0] = 'R';
+            localCurrentStepSize = 0;
+          }
+          // Update the octave
+          TX_Message[1] = knob2.getRotation();
+          // Update the key index
+          TX_Message[2] = i*4+j;
+          // Register that the change has been sent (relative toggle one/zero)
+          keyArray_prevI ^= 1 << j;
+          // Update the global keyArray_prev
+          xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+            // "assignment" of keyArray_prev[i] using memcpy
+            memcpy((void*) &keyArray_prev[i], &keyArray_prevI, sizeof(keyArray_prevI));
+          xSemaphoreGive(keyArrayMutex);
         }
+      }
+      
+      if(isReceiverBoard){
+        // If Receiver board, set the currentStepSize to be played by the board
+        __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+      } else {
+        // Send the message over the bus using the CAN if the board is a sender
+        xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+      }
     }
   }
 
-  if (localCurrentStepSize!=0) {
-    int octave = knob2.getRotation();
-    localCurrentStepSize = shiftByOctave(localCurrentStepSize, octave);
-    __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
-    // equivalent to currentStepSize = localCurrentStepSize;
-  }
+  // equivalent to currentStepSize = localCurrentStepSize;
 }
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
@@ -256,18 +318,15 @@ const char* getCurrentKey() {
 
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
-  static uint16_t time_acc = 0;
-  if(time_acc==sin1000->waveform_length) {
-    time_acc=0;
+  if(!isMuted){
+    // Build a sawtooth waveform
+    static int32_t phaseAcc = 0;
+    phaseAcc += currentStepSize;
+    int32_t Vout = phaseAcc >> 24;
+    // Adjust the volume based on the volume controller
+    Vout = Vout >> (8 - knob3.getRotation()/2);
+    analogWrite(OUTR_PIN, Vout + 128);
   }
-  int out_voltage;
-  if(time_acc<=sin1000->waveform_length) {
-    out_voltage = sin1000->waveform[time_acc];
-  }
-  // Serial.println(out_voltage);
-  out_voltage = out_voltage >> (8-knob3.getRotation()/2);
-  analogWrite(OUTR_PIN, out_voltage+128);
-  time_acc+=1;
 }
 
 
@@ -279,19 +338,19 @@ void CAN_RX_ISR (void) {
   xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
 }
 
+// CAN Bus Message Queue ISR Writer
+void CAN_TX_ISR (void) {
+  xSemaphoreGiveFromISR(CAN_TX_Semaphore, NULL);
+}
+
 // -------------------------------- THREADS -----------------------------
 
 // THREAD: Scan the keys and set the currentStepSize
 void scanKeysTask(void * pvParameters) {
-
-  // CAN Bus transmissable message
-  uint8_t TX_Message[8]= {0};
-
   // Define parameters for how to run the thread
   const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
 
-  uint8_t prevRotationState = 0b00;
   // Body of the thread (i.e. what it does)
   while(1){
     // Perform reading of the key matrix
@@ -312,38 +371,61 @@ void scanKeysTask(void * pvParameters) {
     // Set the current stepSize, according to the key matrix
     setCurrentStepSize();
     // Set the current rotation of knob 3, according to the key matrix
-    knob3.setCurrentRotation();
-    knob2.setCurrentRotation();
-    knob1.setCurrentRotation();
+    knob3.updateCurrentRotation();
+    knob2.updateCurrentRotation();
+    knob1.updateCurrentRotation();
+    // Set the state of the knob button objects
+    knob3Button.setCurrentState();
+    // Set the state of the joystick button object
+    joystickButton.setCurrentState();
 
-    // Check for unsent updates and write to the CAN bus
-    for (int i=0; i<=2; i++) {
-      // Check for any changes that need to be sent on CAN
-      if(keyArray[i] != keyArray_prev[i]) {
-        for (int j=0 ; j <= 3 ; j++) {
-          bool key_now = (((keyArray[i] >> j)) & 0x01);
-          bool key_prev = (((keyArray_prev[i] >> j)) & 0x01);
-          if(key_now != key_prev) {
-            // This is the bit that is different
-            if(key_now) {
-              // Key is released
-              TX_Message[0] = 'R';
-            } else {
-              // Key is pressed
-              TX_Message[0] = 'P';
-            }
-            // Update the octave
-            TX_Message[1] = knob2.getRotation();
-            // Update the key index
-            TX_Message[2] = i*4+j;
-            // Register that the change has been sent
-            keyArray_prev[i] ^= 1 << j;
-          }
-        }
-        // send the message over the bus using the CAN
-        CAN_TX(0x123, TX_Message);
+    if(joystickButton.isPressed()) {
+      //set this board to be the sender
+      __atomic_store_n(&isReceiverBoard, true, __ATOMIC_RELAXED);
+      //send message to tell other boards to be receivers
+      uint8_t TX_Message[8] = {0};
+      TX_Message[0] = 'S';
+      xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+      //synchronize the octaves and volumes of all the boards
+      knob2.sendRotationCANMsg();
+      knob3.sendRotationCANMsg();
+    }
+
+    static uint32_t lastSwitched = 0;
+    if(knob3Button.isPressed() && ((millis()-lastSwitched) > 500)) { //can't switch more than once every 0.5s
+      // Change the mute state of the board
+      __atomic_store_n(&isMuted, !isMuted, __ATOMIC_RELAXED);
+      lastSwitched = micros();
+    }
+
+    westDetect.writeToPin(true);
+    eastDetect.writeToPin(true);
+
+    delayMicroseconds(5);
+
+    westDetect.readFromPin();
+    eastDetect.readFromPin();
+
+    static uint32_t lastMiddleCANSent = 0;
+    if(westDetect.getState() && eastDetect.getState()){
+      // The board has index 1
+      __atomic_store_n(&boardIndex, 1, __ATOMIC_RELAXED);
+      if ((millis()-lastMiddleCANSent) > 50) {
+        //send message to tell other boards there is a Middle
+        uint8_t TX_Message[8] = {0};
+        TX_Message[0] = 'M';
+        xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
       }
-    } 
+    } else if(!westDetect.getState() && eastDetect.getState()) {
+      __atomic_store_n(&boardIndex, 0, __ATOMIC_RELAXED);
+    }
+    else if(westDetect.getState() && !eastDetect.getState()) {
+      if ((millis()-lastMiddleCANRX) < 500) {
+        __atomic_store_n(&boardIndex, 2, __ATOMIC_RELAXED);
+      } else {
+        __atomic_store_n(&boardIndex, 1, __ATOMIC_RELAXED);
+      }
+    }
 
     // Delay the next execution until new initiation according to xFrequency
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -362,35 +444,31 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.clearBuffer();         // clear the internal memory
     u8g2.setFont(u8g2_font_profont12_tf); // choose a suitable font
 
-    // Use a Mutex to safely access keyArray: make local copies of relevant data to minimize locking time
-    // copy keyArray[i] into a local variable to only lock mutex during copy operation
-    uint8_t keyArray0, keyArray1, keyArray2;
-    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      memcpy(&keyArray0, (void*) &keyArray[0], sizeof(keyArray[0]));
-    xSemaphoreGive(keyArrayMutex);
-    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      memcpy(&keyArray1, (void*) &keyArray[1], sizeof(keyArray[1]));
-    xSemaphoreGive(keyArrayMutex);
-    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      memcpy(&keyArray2, (void*) &keyArray[2], sizeof(keyArray[0]));
-    xSemaphoreGive(keyArrayMutex);
-
-    uint32_t value = keyArray0 + (keyArray1 << 4) + (keyArray2 << 8);
-    
-    // b. Print the keyArray as a hexadecimal number
-    //u8g2.drawStr(2,10, "KeyArray:"); 
-    //u8g2.setCursor(60,10);
-    //u8g2.print(value,HEX);
-
-    // c. Print the key to the screen
+    // Print the current local key to the screen
     u8g2.drawStr(2,10, "Key:"); 
     const char* key = getCurrentKey();
     u8g2.drawStr(30,10, key); 
 
-    // d. Print the knob rotation to the screen
+    // Print the current local key to the screen
+    u8g2.drawStr(2,20, "WE:"); 
+    u8g2.setCursor(30,20);
+    u8g2.print(westDetect.getState());
+    u8g2.setCursor(40,20);
+    u8g2.print(eastDetect.getState());
+
+    u8g2.drawStr(60,20, "Idx:"); 
+    u8g2.setCursor(80,20);
+    u8g2.print(boardIndex);
+
+    // Print the knobs rotation to the screen
     u8g2.drawStr(90,30, "Vol:"); 
-    u8g2.setCursor(116,30);
-    u8g2.print(knob3.getRotation()); 
+    if(!isMuted){
+      u8g2.setCursor(116,30);
+      u8g2.print(knob3.getRotation()); 
+    } else {
+      u8g2.drawStr(116,30, "X"); 
+    }
+
 
     u8g2.drawStr(50,30, "Oct:"); 
     u8g2.setCursor(76,30);
@@ -399,14 +477,27 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.setCursor(30,30);
     u8g2.print(knob1.getRotation()); 
 
-    uint32_t ID;
-
-    // Debug code for CAN Bus
+    char* senderOrReceiver;
+    if(isReceiverBoard) {
+      senderOrReceiver = (char*)"R";
+    } else {
+      senderOrReceiver = (char*)"S";
+    }
+    u8g2.setCursor(2,30);
+    u8g2.print(senderOrReceiver);
+    
+    // Print CAN bus messages
     u8g2.drawStr(75,10, "CAN:"); 
     u8g2.setCursor(100,10);
-    u8g2.print((char) RX_Message[0]);
-    u8g2.print(RX_Message[1]);
-    u8g2.print(RX_Message[2]);
+    // Make a local copy of last received message
+    uint8_t localRX_Message[8];
+    xSemaphoreTake(RX_MessageMutex, portMAX_DELAY);
+      memcpy(&localRX_Message, (void*) &RX_Message, sizeof(RX_Message));
+    xSemaphoreGive(RX_MessageMutex);
+
+    u8g2.print((char) localRX_Message[0]);
+    u8g2.print(localRX_Message[1]);
+    u8g2.print(localRX_Message[2]);
 
     //Send to the display
     u8g2.sendBuffer();          // transfer internal memory to the display
@@ -422,25 +513,60 @@ void displayUpdateTask(void * pvParameters) {
 /// THREAD: Decode Thread for CAN Bus Communications
 void decodeTask(void * pvParameters) {
   while(1) {
-    bool is_press = (RX_Message[0]=='P');
-    if(is_press) {
-      int32_t localCurrentStepSize = 0;
-      // Set the note accordingly
-      localCurrentStepSize = stepSizes[RX_Message[2]];
-      localCurrentStepSize = shiftByOctave(localCurrentStepSize, RX_Message[1]);
-      __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
-    } else {
-      __atomic_store_n(&currentStepSize, 0, __ATOMIC_RELAXED);
+    uint8_t localRX_Message[8];
+    xQueueReceive(msgInQ, localRX_Message, portMAX_DELAY);
+    xSemaphoreTake(RX_MessageMutex, portMAX_DELAY);
+      memcpy((void*) &RX_Message, &localRX_Message, sizeof(localRX_Message));
+    xSemaphoreGive(RX_MessageMutex);
+
+    if(RX_Message[0]=='S') {
+      // Set the current board as a sender
+      __atomic_store_n(&isReceiverBoard, false, __ATOMIC_RELAXED);
     }
-    xQueueReceive(msgInQ, RX_Message, portMAX_DELAY);
+    
+    if(RX_Message[0]=='M') {
+      // Update the lastMiddleCANRX to be now
+      __atomic_store_n(&lastMiddleCANRX, millis(), __ATOMIC_RELAXED);
+    } else if((RX_Message[0]=='S')||(RX_Message[0]=='K')) {
+      int senderIndex = RX_Message[1];
+      int knobIndex = RX_Message[2];
+      int knobValue = RX_Message[3];
+      if(knobIndex == 2) {
+        // Assign the octave according to position of board
+        int newOctave = knobValue + (boardIndex - senderIndex);
+        knob2.setRotation(newOctave);
+      } else if(knobIndex == 3) {
+        // Same volume for all boards
+        knob3.setRotation(knobValue);
+      }
+    }
+
+    if(isReceiverBoard) {
+      if(RX_Message[0]=='P') {
+        int32_t localCurrentStepSize = 0;
+        // Set the note accordingly
+        localCurrentStepSize = stepSizes[RX_Message[2]];
+        localCurrentStepSize = shiftByOctave(localCurrentStepSize, RX_Message[1]);
+        __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+      } else if (RX_Message[0]=='R') {
+        __atomic_store_n(&currentStepSize, 0, __ATOMIC_RELAXED);
+      }
+    }
+  }
+}
+
+void CAN_TX_Task (void * pvParameters) {
+  uint8_t msgOut[8];
+  while(1) {
+    xQueueReceive(msgOutQ, msgOut, portMAX_DELAY);
+    xSemaphoreTake(CAN_TX_Semaphore, portMAX_DELAY);
+    CAN_TX(0x123, msgOut);
   }
 }
 
 /// =========================== ARDUINO SETUP & LOOP ===================================
 
 void setup() {
-  // put your setup code here, to run once:
-
   //Set pin directions
   pinMode(RA0_PIN, OUTPUT);
   pinMode(RA1_PIN, OUTPUT);
@@ -469,18 +595,21 @@ void setup() {
   Serial.begin(9600);
   Serial.println("Hello World");
 
-  for (int i=0; i<12 ; i++) {
-    Serial.print("stepSizes[");
-    Serial.print(i);
-    Serial.print("]: ");
-    Serial.println(stepSizes[i]);
-  }
 
 
   // ------ INITIALIZE COMMON RESSOURCES -----
 
   // Mutex to access safely the global keyArray variable
   keyArrayMutex = xSemaphoreCreateMutex();
+  // Mutex to access safely the last RX_Message
+  RX_MessageMutex = xSemaphoreCreateMutex();
+  // Semaphore to handle safe sending of messages
+  CAN_TX_Semaphore = xSemaphoreCreateCounting(3,3);
+
+  // ------ INITIALIZE QUEUES ------
+
+  msgInQ = xQueueCreate(36,8);
+  msgOutQ = xQueueCreate(36,8);
 
   // ---- INITIALIZE INTERRUPTS AND THREADS: ----
 
@@ -498,7 +627,7 @@ void setup() {
     "scanKeys",
     64,
     NULL,
-    3,
+    4,
     &scanKeysHandle
   );
 
@@ -513,22 +642,35 @@ void setup() {
     &displayUpdateHandle
   );
 
-  // Initialize the thread to decode for the CAN Bus
+  // Initialize the thread to decode messages from the CAN Bus
   TaskHandle_t decodeHandle = NULL;
   xTaskCreate(
     decodeTask,
-    "decodeTask",
+    "decode",
     256,
     NULL,
     2,
     &decodeHandle
   );
 
-  // Initialise CAN bus
-  CAN_Init(true);
+  // Initialize the thread to send messages to the CAN Bus
+  TaskHandle_t CAN_TX_Handle = NULL;
+  xTaskCreate(
+    CAN_TX_Task,
+    "CAN_TX",
+    256,
+    NULL,
+    3,
+    &CAN_TX_Handle
+  );
 
+    // Initialise CAN bus mode: true for single-board (loopback), false for multi-board
+  CAN_Init(false);
+
+  // Interrupt when receiving a CAN message
   CAN_RegisterRX_ISR(CAN_RX_ISR);
-  msgInQ = xQueueCreate(36,8);
+  // Interrupt when sending a CAN message
+  CAN_RegisterTX_ISR(CAN_TX_ISR);
 
   setCANFilter(0x123,0x7ff);
   CAN_Start();

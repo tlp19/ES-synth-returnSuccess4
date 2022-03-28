@@ -9,10 +9,17 @@ using namespace std;
 extern volatile uint8_t keyArray[7];
 extern SemaphoreHandle_t keyArrayMutex;
 
+/// Takes in as argument:
+///  - int row: The row index of the knob in the key matrix
+///  - int firstColumn: The index of the first column of the 2 that are read from the key matrix
+///  - int lowerLimit: The lower bound that the value of the rotation of the knob can have
+///  - int upperLimit: The upper bound that the value of the rotation of the knob can have
+///  - bool loops: If true, the value of the rotation of the knob will wrap-around to the lower bound when it exceeds the upper bound (and vice-versa)
 class Knob {
   private:
     int upperLimit;
     int lowerLimit;
+    bool loops;
     int row;
     int firstColumn;
     int prevState;
@@ -69,9 +76,10 @@ class Knob {
     }
 
   public:
-    Knob(int _row, int _firstColumn, int _lowerLimit, int _upperLimit) {
+    Knob(int _row, int _firstColumn, int _lowerLimit, int _upperLimit, bool _loops) {
         lowerLimit = _lowerLimit;
         upperLimit = _upperLimit;
+        loops = _loops;
         row = _row;
         firstColumn = _firstColumn;
         prevState = 0b11;
@@ -79,12 +87,12 @@ class Knob {
     }
 
     /// Analyse the output of the keymatrix read and compute the rotation of the knob
-    void setCurrentRotation() volatile {
+    void updateCurrentRotation() volatile {
         // Define local variables
         uint8_t currentRotationState = 0b00;
         int localRotation = rotation;
 
-        // Get the 4rth byte of keyArray (where the data about the piano key presses is)
+        // Get the row of keyArray where the data about the knob state is
         uint8_t keyArrayR;
         xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
         memcpy(&keyArrayR, (void*) &keyArray[row], sizeof(keyArray[row]));
@@ -96,30 +104,36 @@ class Knob {
         int keyArrayValue1 = ((keyArrayR >> (firstColumn + 1)) & 0x01) ? 0b1 : 0b0;
         currentRotationState = (keyArrayValue0 << 1) + keyArrayValue1;
 
+        // If there has been a change of state
         if(currentRotationState != prevState) {
-        // Compute the new roation based on previous rotation + rotation change
-        localRotation = localRotation + decodeRotationStateChange(prevState, currentRotationState);
-        if(localRotation < lowerLimit) {
-            localRotation = lowerLimit;
-        } else if(localRotation > upperLimit){
-            localRotation = upperLimit;
-        }
-        Serial.println("setCurrentKnobRotation --");
-        Serial.print("\tprevRotationState: (int) ");
-        Serial.println(prevState);
-        Serial.print("\tcurrentRotationState: ");
-        Serial.print((keyArrayR & 0x01) ? 0b1 : 0b0);
-        Serial.println(((keyArrayR >> 1) & 0x01) ? 0b1 : 0b0);
-        Serial.print("\tlocalRotation: ");
-        Serial.println(localRotation);
+            // Compute the new rotation based on previous rotation + rotation change
+            localRotation = localRotation + decodeRotationStateChange(prevState, currentRotationState);
 
-        // Set the new rotation value using atomic store
-        __atomic_store_n(&rotation, localRotation, __ATOMIC_RELAXED);
+            // If the 'loops' boolean is set to true, wrap-around
+            if(loops){
+                if(localRotation < lowerLimit) {
+                    localRotation = upperLimit;
+                } else if(localRotation > upperLimit){
+                    localRotation = lowerLimit;
+                }
+            // If not, block at the limit
+            } else {
+                if(localRotation < lowerLimit) {
+                    localRotation = lowerLimit;
+                } else if(localRotation > upperLimit){
+                    localRotation = upperLimit;
+                }
+            }
+
+            // Set the new rotation value using atomic store
+            __atomic_store_n(&rotation, localRotation, __ATOMIC_RELAXED);
         }
-        // Return the current rotation state for next iteration
+
+        // Store the current rotation state for next iteration
         prevState = currentRotationState;
     }
 
+    /// Returns the current rotation value of the knob
     int getRotation() volatile {
         return rotation;
     }
