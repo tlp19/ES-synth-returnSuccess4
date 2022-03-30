@@ -189,36 +189,11 @@ volatile char* currentKey;
 
 // This is the new data structure, which is a 120-bit (12 keys x 9 octaves) array which holds the current notes that are playing
 volatile bool notes_playing[108];
-const struct Octave octave5 = {sounds:{
-  generate_sinusoid(523.25),
-  generate_sinusoid(554.37),
-  generate_sinusoid(587.33),
-  generate_sinusoid(622.25),
-  generate_sinusoid(659.25),
-  generate_sinusoid(698.46),
-  generate_sinusoid(739.99),
-  generate_sinusoid(783.99),
-  generate_sinusoid(830.61),
-  generate_sinusoid(880.00),
-  generate_sinusoid(932.33),
-  generate_sinusoid(987.77),
-  }};
-const struct Octave octave4 = {sounds:{
-  generate_sinusoid(261.63),
-  generate_sinusoid(277.18),
-  generate_sinusoid(293.66),
-  generate_sinusoid(311.13),
-  generate_sinusoid(329.63),
-  generate_sinusoid(349.23),
-  generate_sinusoid(369.99),
-  generate_sinusoid(392.00),
-  generate_sinusoid(415.30),
-  generate_sinusoid(440.00),
-  generate_sinusoid(466.16),
-  generate_sinusoid(493.88),
-  }};
 
-const volatile Octave octaves[9] = {octave5, octave5, octave5, octave5, octave4, octave5, octave5, octave5, octave5};
+/// Octaves of Sinusoidal sound arrays
+extern const volatile Octave sineOctaves[9];
+
+
 
 // Mutex to protect shared ressources
 SemaphoreHandle_t keyArrayMutex;
@@ -376,8 +351,8 @@ void sampleISR() {
     for(int j=0; j<9; j++) {
       for(int i=0; i<12; i++) {
         if(notes_playing[j*12 + i]) {
-          int waveform_length = octaves[j].sounds[i]->waveform_length;
-          waveform_accumulator += (octaves[j].sounds[i]->waveform[time_acc%waveform_length]);
+          int waveform_length = sineOctaves[j].sounds[i]->waveform_length;
+          waveform_accumulator += (sineOctaves[j].sounds[i]->waveform[time_acc%waveform_length]);
           nb_of_notes++;
         }
       }
