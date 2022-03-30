@@ -46,7 +46,7 @@ inline Sound * generate_sinusoid(float sin_freq) {
     sinusoid_ptr->waveform_length = waveform_length;
 
     for(int i=0; i<waveform_length; i++) {
-        sinusoid_ptr->waveform[i] = (uint8_t)((sin(2.0 * (i/22000.0) * M_PI * sin_freq))*128);
+        sinusoid_ptr->waveform[i] = (uint8_t)((sin(2.0 * (i/22000.0) * M_PI * sin_freq)) * 128);
     };
 
     sinusoid_ptr->waveform[waveform_length-1] = sinusoid_ptr->waveform[0];

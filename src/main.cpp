@@ -341,33 +341,44 @@ const char* getCurrentKey() {
 /// Output a sawtooth waveform to the speakers
 void sampleISR() {
   static uint16_t time_acc = 0;
+  static int32_t phaseAcc = 0;
 
   if(!isMuted && isReceiverBoard){  // Check for isReceiverBoard is not needed, here more as an assertion
-
-    // Go through the notes playing array and add all the relevant waves together
-    int out_voltage;
-    int waveform_accumulator = 0;
-    int nb_of_notes=0;
-    for(int j=0; j<9; j++) {
-      for(int i=0; i<12; i++) {
-        if(notes_playing[j*12 + i]) {
-          int waveform_length = sineOctaves[j].sounds[i]->waveform_length;
-          waveform_accumulator += (sineOctaves[j].sounds[i]->waveform[time_acc%waveform_length]);
-          nb_of_notes++;
+    // Play a Sine wave
+    if((knob1.getRotation() == 2) || (knob1.getRotation() == 3)) {
+      // Go through the notes playing array and add all the relevant waves together
+      int out_voltage;
+      int waveform_accumulator = 0;
+      int nb_of_notes=0;
+      for(int j=0; j<9; j++) {
+        for(int i=0; i<12; i++) {
+          if(notes_playing[j*12 + i]) {
+            int waveform_length = sineOctaves[j].sounds[i]->waveform_length;
+            waveform_accumulator += (sineOctaves[j].sounds[i]->waveform[time_acc%waveform_length]);
+            nb_of_notes++;
+          }
         }
       }
+
+      // Avoid clipping when multiple notes are played simultaneously
+      waveform_accumulator /= nb_of_notes;
+
+      // As the waves are in the range [-128,+128] bring them back to [0,255]
+      waveform_accumulator += 128;
+
+      // Adjust the wave depending on the loudness knob setting
+      out_voltage = waveform_accumulator >> (8 - (knob3.getRotation()/2));
+      analogWrite(OUTR_PIN, out_voltage);
+      time_acc+=1;
+    } 
+    // Play a legacy Sawtooth wave
+    else {
+      phaseAcc += currentStepSize;
+      int32_t Vout = phaseAcc >> 24;
+      // Adjust the volume based on the volume controller
+      Vout = Vout >> (8 - (knob3.getRotation()/2));
+      analogWrite(OUTR_PIN, Vout + 128);
     }
-
-    // Avoid clipping when multiple notes are played simultaneously
-    waveform_accumulator /= nb_of_notes;
-
-    // As the waves are in the range [-128,+128] bring them back to [0,255]
-    waveform_accumulator+128;
-
-    // Adjust the wave depending on the loudness knob setting
-    out_voltage = waveform_accumulator >> (8-knob3.getRotation()/2);
-    analogWrite(OUTR_PIN, out_voltage);
-    time_acc+=1;
   }
 }
 
@@ -488,19 +499,17 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.setFont(u8g2_font_profont12_tf); // choose a suitable font
 
     // Print the current local key to the screen
-    u8g2.drawStr(2,10, "Key:"); 
+    u8g2.drawStr(2,10, "Keys:"); 
     const char* key = getCurrentKey();
-    u8g2.drawStr(30,10, key); 
+    u8g2.drawStr(35,10, key); 
 
-    // // Print the current local key to the screen
     // u8g2.drawStr(2,20, "WE:"); 
     // u8g2.setCursor(30,20);
     // u8g2.print(westDetect.getState());
     // u8g2.setCursor(40,20);
     // u8g2.print(eastDetect.getState());
 
-
-    // Print the knobs rotation to the screen
+    // Current Volume
     u8g2.drawStr(90,30, "Vol:"); 
     if(!isMuted){
       u8g2.setCursor(116,30);
@@ -509,35 +518,42 @@ void displayUpdateTask(void * pvParameters) {
       u8g2.drawStr(116,30, "X"); 
     }
 
-
+    // Current board Octave
     u8g2.drawStr(50,30, "Oct:"); 
     u8g2.setCursor(76,30);
     u8g2.print(knob2.getRotation());
 
-    u8g2.setCursor(30,30);
-    u8g2.print(knob1.getRotation()); 
+    // Current Waveform mode
+    char* waveMode;
+    if((knob1.getRotation() == 2) || (knob1.getRotation() == 3)) {
+      waveMode = (char*)"Sine";
+    } else {
+      waveMode = (char*)"Saw";
+    }
+    u8g2.drawStr(2,30, "~:");
+    u8g2.setCursor(15,30);
+    u8g2.print(waveMode); 
 
+    // Current boardMode
     char* senderOrReceiver;
     if(isReceiverBoard) {
       senderOrReceiver = (char*)"R";
     } else {
       senderOrReceiver = (char*)"S";
     }
-    u8g2.setCursor(2,30);
+    u8g2.setCursor(2,20);
     u8g2.print(senderOrReceiver);
 
-    u8g2.setCursor(10,30);
+    u8g2.setCursor(10,20);
     u8g2.print(boardIndex);
     
-    // Print CAN bus messages
-    u8g2.drawStr(75,10, "CAN:"); 
-    u8g2.setCursor(100,10);
-    // Make a local copy of last received message
+    // CAN bus messages
     uint8_t localRX_Message[8];
     xSemaphoreTake(RX_MessageMutex, portMAX_DELAY);
       memcpy(&localRX_Message, (void*) &RX_Message, sizeof(RX_Message));
     xSemaphoreGive(RX_MessageMutex);
-
+    u8g2.drawStr(75,20, "CAN:"); 
+    u8g2.setCursor(100,20);
     u8g2.print((char) localRX_Message[0]);
     u8g2.print(localRX_Message[1]);
     u8g2.print(localRX_Message[2]);
