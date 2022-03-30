@@ -24,6 +24,8 @@ const uint32_t interval = 100; //Display update interval
 //Key Matrix knob buttons location
  const int knob3ButtonRow = 5;
  const int knob3ButtonCol = 1;
+ const int knob0ButtonRow = 6;
+ const int knob0ButtonCol = 0;
 
 //Key Matrix joystick button location
  const int joystickButtonRow = 5;
@@ -233,8 +235,8 @@ volatile CAN_Knob knob2 = CAN_Knob(2, knob2Row, knob2FCol, 0, 8, false);
 // Global object for Knob 1
 volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5, true);
 
-// Global object for Joystick button
-volatile Button joystickButton = Button(joystickButtonRow, joystickButtonCol);
+// Global object for Knob 0 button
+volatile Button boardModeButton = Button(knob0ButtonRow, knob0ButtonCol);
 
 volatile Detect westDetect = Detect(5,3);
 volatile Detect eastDetect = Detect(6,3);
@@ -320,12 +322,6 @@ void setCurrentStepSize() {
             // "assignment" of keyArray_prev[i] using memcpy
             memcpy((void*) &keyArray_prev[i], &keyArray_prevI, sizeof(keyArray_prevI));
           xSemaphoreGive(keyArrayMutex);
-
-          Serial.print("Notes playing: ");
-          for(int i=0; i<12; i++) {
-            Serial.print(notes_playing[i]);
-          }
-          Serial.println("");
         }
       }
       
@@ -448,9 +444,9 @@ void scanKeysTask(void * pvParameters) {
     // Set the state of the knob button objects
     knob3Button.setCurrentState();
     // Set the state of the joystick button object
-    joystickButton.setCurrentState();
+    boardModeButton.setCurrentState();
 
-    if(joystickButton.isPressed()) {
+    if(boardModeButton.isPressed()) {
       //set this board to be the sender
       __atomic_store_n(&isReceiverBoard, true, __ATOMIC_RELAXED);
       //send message to tell other boards to be receivers
@@ -463,7 +459,7 @@ void scanKeysTask(void * pvParameters) {
     }
 
     static uint32_t lastSwitched = 0;
-    if(knob3Button.isPressed() && ((millis()-lastSwitched) > 500)) { //can't switch more than once every 0.5s
+    if(knob3Button.isPressed() && ((millis()-lastSwitched) > 1000)) { //can't switch more than once every 0.5s
       // Change the mute state of the board
       __atomic_store_n(&isMuted, !isMuted, __ATOMIC_RELAXED);
       lastSwitched = micros();
