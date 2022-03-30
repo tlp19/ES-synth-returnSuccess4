@@ -223,7 +223,7 @@ volatile Detect eastDetect = Detect(6,3);
   volatile bool isReceiverBoard = true;
   // Global boolean to know if there is a Middle board in the keyboards configuration
   volatile uint32_t lastMiddleCANRX = 0;
-
+  // Index representing the position of the board in the keyboard configuration
   volatile uint8_t boardIndex = 0;
 
 // CAN Bus Message Receive Queue
