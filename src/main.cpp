@@ -191,7 +191,7 @@ volatile char* currentKey;
 volatile bool notes_playing[108];
 
 /// Octaves of Sinusoidal sound arrays
-extern const volatile Octave sineOctaves[9];
+extern const volatile Octave* sineOctaves[9];
 
 
 
@@ -353,8 +353,8 @@ void sampleISR() {
       for(int j=0; j<9; j++) {
         for(int i=0; i<12; i++) {
           if(notes_playing[j*12 + i]) {
-            int waveform_length = sineOctaves[j].sounds[i]->waveform_length;
-            waveform_accumulator += (sineOctaves[j].sounds[i]->waveform[time_acc%waveform_length]);
+            int waveform_length = sineOctaves[j]->sounds[i]->waveform_length;
+            waveform_accumulator += (sineOctaves[j]->sounds[i]->waveform[time_acc%waveform_length]);
             nb_of_notes++;
           }
         }

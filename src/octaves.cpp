@@ -140,4 +140,4 @@ const struct Octave sineOctave8 = {sounds:{
   }};
 
 /// Octaves of Sinusoidal sound arrays
-volatile const Octave sineOctaves[9] = {sineOctave0, sineOctave1, sineOctave2, sineOctave3, sineOctave4, sineOctave5, sineOctave6, sineOctave7, sineOctave8};
+volatile const Octave* sineOctaves[9] = {&sineOctave0, &sineOctave1, &sineOctave2, &sineOctave3, &sineOctave4, &sineOctave5, &sineOctave6, &sineOctave7, &sineOctave8};
