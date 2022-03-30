@@ -4,50 +4,50 @@ using namespace std;
 
 //  ----  Octaves of Sinusoidal sound arrays  ----
 
-// const struct Octave sineOctave0 = {sounds:{
-//     generate_sinusoid(16.35),
-//     generate_sinusoid(17.32),
-//     generate_sinusoid(18.35),
-//     generate_sinusoid(19.45),
-//     generate_sinusoid(20.60),
-//     generate_sinusoid(21.83),
-//     generate_sinusoid(23.12),
-//     generate_sinusoid(24.50),
-//     generate_sinusoid(25.96),
-//     generate_sinusoid(27.50),
-//     generate_sinusoid(29.14),
-//     generate_sinusoid(30.87),
-//   }};
+const struct Octave sineOctave0 = {sounds:{
+    generate_sinusoid(16.35),
+    generate_sinusoid(17.32),
+    generate_sinusoid(18.35),
+    generate_sinusoid(19.45),
+    generate_sinusoid(20.60),
+    generate_sinusoid(21.83),
+    generate_sinusoid(23.12),
+    generate_sinusoid(24.50),
+    generate_sinusoid(25.96),
+    generate_sinusoid(27.50),
+    generate_sinusoid(29.14),
+    generate_sinusoid(30.87),
+  }};
 
-// const struct Octave sineOctave1 = {sounds:{
-//     generate_sinusoid(32.70),
-//     generate_sinusoid(34.65),
-//     generate_sinusoid(36.71),
-//     generate_sinusoid(38.89),
-//     generate_sinusoid(41.20),
-//     generate_sinusoid(43.65),
-//     generate_sinusoid(46.25),
-//     generate_sinusoid(49.00),
-//     generate_sinusoid(51.91),
-//     generate_sinusoid(55.00),
-//     generate_sinusoid(58.27),
-//     generate_sinusoid(61.74),
-//   }};
+const struct Octave sineOctave1 = {sounds:{
+    generate_sinusoid(32.70),
+    generate_sinusoid(34.65),
+    generate_sinusoid(36.71),
+    generate_sinusoid(38.89),
+    generate_sinusoid(41.20),
+    generate_sinusoid(43.65),
+    generate_sinusoid(46.25),
+    generate_sinusoid(49.00),
+    generate_sinusoid(51.91),
+    generate_sinusoid(55.00),
+    generate_sinusoid(58.27),
+    generate_sinusoid(61.74),
+  }};
 
-// const struct Octave sineOctave2 = {sounds:{
-//     generate_sinusoid(65.41),
-//     generate_sinusoid(69.30),
-//     generate_sinusoid(73.42),
-//     generate_sinusoid(77.78),
-//     generate_sinusoid(82.41),
-//     generate_sinusoid(87.31),
-//     generate_sinusoid(92.50),
-//     generate_sinusoid(98.00),
-//     generate_sinusoid(103.83),
-//     generate_sinusoid(110.00),
-//     generate_sinusoid(116.54),
-//     generate_sinusoid(123.47),
-//   }};
+const struct Octave sineOctave2 = {sounds:{
+    generate_sinusoid(65.41),
+    generate_sinusoid(69.30),
+    generate_sinusoid(73.42),
+    generate_sinusoid(77.78),
+    generate_sinusoid(82.41),
+    generate_sinusoid(87.31),
+    generate_sinusoid(92.50),
+    generate_sinusoid(98.00),
+    generate_sinusoid(103.83),
+    generate_sinusoid(110.00),
+    generate_sinusoid(116.54),
+    generate_sinusoid(123.47),
+  }};
 
 const struct Octave sineOctave3 = {sounds:{
     generate_sinusoid(130.81),
@@ -140,4 +140,4 @@ const struct Octave sineOctave8 = {sounds:{
   }};
 
 /// Octaves of Sinusoidal sound arrays
-volatile const Octave sineOctaves[9] = {sineOctave4, sineOctave4, sineOctave4, sineOctave3, sineOctave4, sineOctave5, sineOctave6, sineOctave7, sineOctave8};
+volatile const Octave sineOctaves[9] = {sineOctave0, sineOctave1, sineOctave2, sineOctave3, sineOctave4, sineOctave5, sineOctave6, sineOctave7, sineOctave8};

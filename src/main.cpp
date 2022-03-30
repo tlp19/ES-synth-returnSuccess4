@@ -208,7 +208,7 @@ volatile Button knob3Button = Button(knob3ButtonRow, knob3ButtonCol);
 // Global object for Knob 2
 volatile CAN_Knob knob2 = CAN_Knob(2, knob2Row, knob2FCol, 0, 8, false);
 // Global object for Knob 1
-volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5, true);
+volatile CAN_Knob knob1 = CAN_Knob(1, knob1Row, knob1FCol, 0, 3, true);   // two values per mode, for easier control
 
 // Global object for Knob 0 button
 volatile Button boardModeButton = Button(knob0ButtonRow, knob0ButtonCol);
@@ -429,6 +429,7 @@ void scanKeysTask(void * pvParameters) {
       TX_Message[0] = 'S';
       xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
       //synchronize the octaves and volumes of all the boards
+      knob1.sendRotationCANMsg();
       knob2.sendRotationCANMsg();
       knob3.sendRotationCANMsg();
     }
@@ -580,6 +581,9 @@ void decodeTask(void * pvParameters) {
       } else if(knobIndex == 3) {
         // Same volume for all boards
         knob3.setRotation(knobValue);
+      } else if(knobIndex == 1) {
+        // Same mode for all boards
+        knob1.setRotation(knobValue);
       }
     }
 

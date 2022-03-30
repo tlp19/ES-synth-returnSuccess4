@@ -26,14 +26,16 @@ inline Sound * generate_sinusoid(float sin_freq) {
     // This block calculates a good length of the waveform array
     // The ideal length is f_s/f_sin, but this is a floating point number and we need an int array length
     // It searches for a waveform array length that minimises the error and allows for smooth waveform-cycling
-    int waveform_length = 10000;
+    int waveform_length = 400;
+
+    const int max_length = 400;
     for(int l=1; l<10; l++) {
         double THRESH = 0.05;
         double division_result = 22000.0/sin_freq;
         double ideal_length = division_result*(float)l;
         double proposed_length = round(ideal_length);
         int deviation = abs(proposed_length - ideal_length);
-        if(deviation<THRESH) {
+        if(deviation<THRESH && (proposed_length <= max_length)) {
             waveform_length = proposed_length;
         }
     }
