@@ -275,15 +275,23 @@ void setCurrentStepSize() {
             TX_Message[0] = 'P';
             localCurrentStepSize = stepSizes[i*4+j];
             localCurrentStepSize = shiftByOctave(localCurrentStepSize, knob2.getRotation());
+
             // Update the array with notes that are currently playing
-            notes_playing[i*4+j] = true;
+            // TODO: NOT THREAD SAFE
+            //notes_playing[i*4+j] = true;
+            if(isReceiverBoard){
+              __atomic_store_n(&notes_playing[i*4+j], true, __ATOMIC_RELAXED);
+            }
           } else {
             // Key is released
             TX_Message[0] = 'R';
             localCurrentStepSize = 0;
             
             // Update the array with notes that are currently playing
-            notes_playing[i*4+j] = false;
+            //notes_playing[i*4+j] = false;
+            if(isReceiverBoard){
+              __atomic_store_n(&notes_playing[i*4+j], false, __ATOMIC_RELAXED);
+            }
           }
           // Update the octave
           TX_Message[1] = knob2.getRotation();
@@ -314,8 +322,6 @@ void setCurrentStepSize() {
       }
     }
   }
-
-  // equivalent to currentStepSize = localCurrentStepSize;
 }
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
@@ -349,7 +355,7 @@ const char* getCurrentKey() {
 void sampleISR() {
   static uint16_t time_acc = 0;
 
-  if(!isMuted){
+  if(!isMuted && isReceiverBoard){  // Check for isReceiverBoard is not needed, here more as an assertion
 
     // Go through the notes playing array and add all the relevant waves together
     int out_voltage;
@@ -496,16 +502,13 @@ void displayUpdateTask(void * pvParameters) {
     const char* key = getCurrentKey();
     u8g2.drawStr(30,10, key); 
 
-    // Print the current local key to the screen
-    u8g2.drawStr(2,20, "WE:"); 
-    u8g2.setCursor(30,20);
-    u8g2.print(westDetect.getState());
-    u8g2.setCursor(40,20);
-    u8g2.print(eastDetect.getState());
+    // // Print the current local key to the screen
+    // u8g2.drawStr(2,20, "WE:"); 
+    // u8g2.setCursor(30,20);
+    // u8g2.print(westDetect.getState());
+    // u8g2.setCursor(40,20);
+    // u8g2.print(eastDetect.getState());
 
-    u8g2.drawStr(60,20, "Idx:"); 
-    u8g2.setCursor(80,20);
-    u8g2.print(boardIndex);
 
     // Print the knobs rotation to the screen
     u8g2.drawStr(90,30, "Vol:"); 
@@ -532,6 +535,9 @@ void displayUpdateTask(void * pvParameters) {
     }
     u8g2.setCursor(2,30);
     u8g2.print(senderOrReceiver);
+
+    u8g2.setCursor(10,30);
+    u8g2.print(boardIndex);
     
     // Print CAN bus messages
     u8g2.drawStr(75,10, "CAN:"); 
@@ -595,8 +601,16 @@ void decodeTask(void * pvParameters) {
         localCurrentStepSize = stepSizes[RX_Message[2]];
         localCurrentStepSize = shiftByOctave(localCurrentStepSize, RX_Message[1]);
         __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+
+        uint8_t octave = RX_Message[1];
+        uint8_t key = RX_Message[2];
+        __atomic_store_n(&notes_playing[key], true, __ATOMIC_RELAXED);
+
       } else if (RX_Message[0]=='R') {
         __atomic_store_n(&currentStepSize, 0, __ATOMIC_RELAXED);
+        uint8_t octave = RX_Message[1];
+        uint8_t key = RX_Message[2];
+        __atomic_store_n(&notes_playing[key], false, __ATOMIC_RELAXED);
       }
     }
   }
