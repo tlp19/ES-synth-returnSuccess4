@@ -371,22 +371,22 @@ void sampleISR() {
 
     // Go through the notes playing array and add all the relevant waves together
     int out_voltage;
-    int waveform_accumulator=0;
+    int waveform_accumulator = 0;
+    int nb_of_notes=0;
     for(int j=0; j<9; j++) {
       for(int i=0; i<12; i++) {
         if(notes_playing[j*12 + i]) {
           int waveform_length = octaves[j].sounds[i]->waveform_length;
-          waveform_accumulator += octaves[j].sounds[i]->waveform[time_acc%waveform_length];
+          waveform_accumulator += (octaves[j].sounds[i]->waveform[time_acc%waveform_length]);
+          nb_of_notes++;
         }
       }
     }
 
     // Avoid clipping when multiple notes are played simultaneously
-    if(waveform_accumulator>128) {
-      waveform_accumulator=128;
-    }
+    waveform_accumulator /= nb_of_notes;
 
-    // As the waves are in the range -128,+128 bring them back to 0,255
+    // As the waves are in the range [-128,+128] bring them back to [0,255]
     waveform_accumulator+128;
 
     // Adjust the wave depending on the loudness knob setting
