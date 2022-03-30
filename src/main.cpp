@@ -185,22 +185,38 @@ volatile int32_t currentStepSize = 0;
 // Store the currentKey being played
 volatile char* currentKey;
 
-// This is the new data structure, which is a 12-bit array which holds the current notes that are playing
-volatile bool notes_playing[12];
-const struct Octave currentOctave = {sounds:{
-  generate_sinusoid(523.2511),
-  generate_sinusoid(554.3653),
-  generate_sinusoid(587.3295),
-  generate_sinusoid(622.2540),
-  generate_sinusoid(659.2551),
-  generate_sinusoid(739.9888),
-  generate_sinusoid(783.9909),
-  generate_sinusoid(830.6094),
-  generate_sinusoid(880.0000),
-  generate_sinusoid(987.7666),
-  generate_sinusoid(1046.502),
-  generate_sinusoid(1108.731),
+// This is the new data structure, which is a 120-bit (12 keys x 9 octaves) array which holds the current notes that are playing
+volatile bool notes_playing[108];
+const struct Octave octave5 = {sounds:{
+  generate_sinusoid(523.25),
+  generate_sinusoid(554.37),
+  generate_sinusoid(587.33),
+  generate_sinusoid(622.25),
+  generate_sinusoid(659.25),
+  generate_sinusoid(698.46),
+  generate_sinusoid(739.99),
+  generate_sinusoid(783.99),
+  generate_sinusoid(830.61),
+  generate_sinusoid(880.00),
+  generate_sinusoid(932.33),
+  generate_sinusoid(987.77),
   }};
+const struct Octave octave4 = {sounds:{
+  generate_sinusoid(261.63),
+  generate_sinusoid(277.18),
+  generate_sinusoid(293.66),
+  generate_sinusoid(311.13),
+  generate_sinusoid(329.63),
+  generate_sinusoid(349.23),
+  generate_sinusoid(369.99),
+  generate_sinusoid(392.00),
+  generate_sinusoid(415.30),
+  generate_sinusoid(440.00),
+  generate_sinusoid(466.16),
+  generate_sinusoid(493.88),
+  }};
+
+const volatile Octave octaves[9] = {octave5, octave5, octave5, octave5, octave4, octave5, octave5, octave5, octave5};
 
 // Mutex to protect shared ressources
 SemaphoreHandle_t keyArrayMutex;
@@ -213,7 +229,7 @@ volatile uint8_t keyArray_prev[3] = {1,1,1};
 volatile CAN_Knob knob3 = CAN_Knob(3, knob3Row, knob3FCol, 1, 16, false);
 volatile Button knob3Button = Button(knob3ButtonRow, knob3ButtonCol);
 // Global object for Knob 2
-volatile CAN_Knob knob2 = CAN_Knob(2, knob2Row, knob2FCol, 0, 9, false);
+volatile CAN_Knob knob2 = CAN_Knob(2, knob2Row, knob2FCol, 0, 8, false);
 // Global object for Knob 1
 volatile Knob knob1 = Knob(knob1Row, knob1FCol, 0, 5, true);
 
@@ -280,7 +296,7 @@ void setCurrentStepSize() {
             // TODO: NOT THREAD SAFE
             //notes_playing[i*4+j] = true;
             if(isReceiverBoard){
-              __atomic_store_n(&notes_playing[i*4+j], true, __ATOMIC_RELAXED);
+              __atomic_store_n(&notes_playing[12*knob2.getRotation() + (i*4+j)], true, __ATOMIC_RELAXED);
             }
           } else {
             // Key is released
@@ -290,7 +306,7 @@ void setCurrentStepSize() {
             // Update the array with notes that are currently playing
             //notes_playing[i*4+j] = false;
             if(isReceiverBoard){
-              __atomic_store_n(&notes_playing[i*4+j], false, __ATOMIC_RELAXED);
+              __atomic_store_n(&notes_playing[12*knob2.getRotation() + (i*4+j)], false, __ATOMIC_RELAXED);
             }
           }
           // Update the octave
@@ -360,10 +376,12 @@ void sampleISR() {
     // Go through the notes playing array and add all the relevant waves together
     int out_voltage;
     int waveform_accumulator=0;
-    for(int i=0; i<12; i++) {
-      if(notes_playing[i]) {
-        int waveform_length = currentOctave.sounds[i]->waveform_length;
-        waveform_accumulator += currentOctave.sounds[i]->waveform[time_acc%waveform_length];
+    for(int j=0; j<9; j++) {
+      for(int i=0; i<12; i++) {
+        if(notes_playing[j*12 + i]) {
+          int waveform_length = octaves[j].sounds[i]->waveform_length;
+          waveform_accumulator += octaves[j].sounds[i]->waveform[time_acc%waveform_length];
+        }
       }
     }
 
@@ -604,13 +622,13 @@ void decodeTask(void * pvParameters) {
 
         uint8_t octave = RX_Message[1];
         uint8_t key = RX_Message[2];
-        __atomic_store_n(&notes_playing[key], true, __ATOMIC_RELAXED);
+        __atomic_store_n(&notes_playing[12*octave + key], true, __ATOMIC_RELAXED);
 
       } else if (RX_Message[0]=='R') {
         __atomic_store_n(&currentStepSize, 0, __ATOMIC_RELAXED);
         uint8_t octave = RX_Message[1];
         uint8_t key = RX_Message[2];
-        __atomic_store_n(&notes_playing[key], false, __ATOMIC_RELAXED);
+        __atomic_store_n(&notes_playing[12*octave + key], false, __ATOMIC_RELAXED);
       }
     }
   }
