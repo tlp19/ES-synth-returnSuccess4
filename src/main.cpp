@@ -479,14 +479,19 @@ void displayUpdateTask(void * pvParameters) {
 
     // Print the current local key to the screen
     u8g2.drawStr(2,10, "Keys:"); 
-    int width_offset = 35;
-    for(int i=0 ; i<108 ; i++) {
-      if (notes_playing[i] == true){
-        const char* key = keysList[i % 12];
-        u8g2.drawStr(width_offset,10, key); 
-        width_offset += 13;
+    if(isReceiverBoard) {
+      int width_offset = 35;
+      for(int i=0 ; i<108 ; i++) {
+        if (notes_playing[i] == true){
+          const char* key = keysList[i % 12];
+          u8g2.drawStr(width_offset,10, key); 
+          width_offset += 13;
+        }
       }
-    } 
+    } else {
+      u8g2.drawStr(35,10, "-");
+    }
+ 
 
     // u8g2.drawStr(2,20, "WE:"); 
     // u8g2.setCursor(30,20);
