@@ -311,27 +311,6 @@ void setCurrentStepSize() {
   }
 }
 
-/// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
-const char* getCurrentKey() {
-  const char* currentKey = "-";
-  // Iterate through the first 3 rows/3 first bytes of keyArray (where the data about the piano key presses is)
-  for (int i=0 ; i <= 2 ; i++) {
-    uint8_t keyArrayI;
-    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      memcpy(&keyArrayI, (void*) &keyArray[i], sizeof(keyArray[i]));
-    xSemaphoreGive(keyArrayMutex);
-    // Iterate through the last 4 bits of the row's value, checking each time if it is zero
-    for (int j=0 ; j <= 3 ; j++) {
-        bool isSelected = !(((keyArrayI >> j)) & 0x01);
-        // If it is zero, then the key is being pressed
-        if (isSelected) {
-          currentKey = keysList[i*4+j];
-        }
-    }
-  }
-  return currentKey;
-}
-
 
 // ========================  INTERRUPTS & THREADS  ===========================
 
@@ -500,8 +479,14 @@ void displayUpdateTask(void * pvParameters) {
 
     // Print the current local key to the screen
     u8g2.drawStr(2,10, "Keys:"); 
-    const char* key = getCurrentKey();
-    u8g2.drawStr(35,10, key); 
+    int width_offset = 35;
+    for(int i=0 ; i<108 ; i++) {
+      if (notes_playing[i] == true){
+        const char* key = keysList[i % 12];
+        u8g2.drawStr(width_offset,10, key); 
+        width_offset += 13;
+      }
+    } 
 
     // u8g2.drawStr(2,20, "WE:"); 
     // u8g2.setCursor(30,20);
