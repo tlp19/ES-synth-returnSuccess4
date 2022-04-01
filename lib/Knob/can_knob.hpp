@@ -15,6 +15,7 @@ extern volatile uint8_t boardIndex;
 extern QueueHandle_t msgOutQ;
 
 /// Takes in as argument:
+///  - int index: Index of the knob on the physical board (used to identify the knob in CAN messages)
 ///  - int row: The row index of the knob in the key matrix
 ///  - int firstColumn: The index of the first column of the 2 that are read from the key matrix
 ///  - int lowerLimit: The lower bound that the value of the rotation of the knob can have
@@ -93,6 +94,7 @@ class CAN_Knob {
         rotation = floor((_lowerLimit + _upperLimit) / 2);
     }
 
+    /// Send the current rotation of the Knob as a CAN Message
     void sendRotationCANMsg() volatile {
         uint8_t TX_Message[8] = {0};
         TX_Message[0] = 'K';
@@ -153,6 +155,7 @@ class CAN_Knob {
         }
     }
 
+    /// Manually set the rotation value of a CAN_KNOB
     void setRotation(int value) volatile {
         int localRotation = value;
         // If the 'loops' boolean is set to true, wrap-around

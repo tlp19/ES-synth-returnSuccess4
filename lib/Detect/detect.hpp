@@ -14,8 +14,8 @@ extern SemaphoreHandle_t keyArrayMutex;
 extern void setRow(uint8_t rowIdx);
 
 /// Takes in as argument:
-///  - int row: The row index of the button in the key matrix
-///  - int firstColumn: The column index of the button in the key matrix
+///  - int row: The row index of the Detect port in the key matrix
+///  - int firstColumn: The column index of the Detect port in the key matrix
 class Detect {
   private:
     int row;
@@ -28,7 +28,7 @@ class Detect {
         column = _column;
     }
 
-    /// Analyse the output of the keymatrix read and update the state
+    /// Write a value to the output Detect port
     void writeToPin(bool value) volatile {
         setRow(row);
         digitalWrite(REN_PIN,LOW);
@@ -40,7 +40,7 @@ class Detect {
 
     /// Analyse the output of the keymatrix read and update the state
     void readFromPin() volatile {
-        // Get the row of the keyArray where the data about the button press is
+        // Get the row of the keyArray where the data about the Detect port is
         uint8_t keyArrayR;
         xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
         memcpy(&keyArrayR, (void*) &keyArray[row], sizeof(keyArray[row]));
@@ -53,7 +53,7 @@ class Detect {
         __atomic_store_n(&state, currentPressedState, __ATOMIC_RELAXED);
     }
 
-    /// Returns if the Button is being pressed or not
+    /// Returns if the input Detect port is HIGH or not
     bool getState() volatile {
         return state;
     }
