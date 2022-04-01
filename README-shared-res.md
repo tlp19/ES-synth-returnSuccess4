@@ -36,7 +36,7 @@ And those shared ressources are the following:
 
 1. The `currentStepSize`, which stores the current step size of the note being played, is only written to using atomic store operations as it is accessed by the `sampleISR` interrupt and can therefore not be protected by a Mutex.
 
-1. Similarly, the `notes_playing` boolean array stores whether or not a certain note is being played (it is used for one of our advanced features: polyphony) has its elements being modified only using atomic operations. This also because it is accessed inside the `sampleISR` interrupt, and as the whole array does not need to be synchronized and updated at once, atomic operations are used instead of a possible critical section.
+1. Similarly, the `notes_playing` boolean array stores whether or not a certain note is being played (it is used for one of our advanced features: polyphony) and has its elements being modified only using atomic operations. This also because it is accessed inside the `sampleISR` interrupt, and as the whole array does not need to be synchronized and updated at once, atomic operations are used instead of a possible critical section.
 
 1. The `msgInQ` queue, which acts as a buffer for incoming messages from the CAN Bus.
 
