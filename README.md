@@ -26,7 +26,11 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 | CAN_RX_ISR        |        Interrupt       |            0.7            |       0.00319       |                  0.456                  |         0.456        |
 |                   |                        |                           |        Total        |                  39.700                 |        39.700
 
+To know if a specific schedule will work, we need to analyse the total latency of the system and compare it to the latency 
+of the lowest-priority task. 
 
+As our total latency: 39.7ms, is less than the latency of our lowest-priority task 'displayUpdateTask':100ms, none of the
+deadlines will be missed and our schedule will work without failures. 
 
 </br>
 
