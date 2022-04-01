@@ -375,9 +375,9 @@ void CAN_TX_ISR (void) {
 // -------------------------------- THREADS -----------------------------
 
 // THREAD: Scan the keys and set the currentStepSize/notes_playing
-void scanKeysTask(void * pvParameters) {
+void scanInputsTask(void * pvParameters) {
   // Define parameters for how to run the thread
-  const TickType_t xFrequency = 50/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
+  const TickType_t xFrequency = 50/portTICK_PERIOD_MS;  //Initiation interval -> 20ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
 
   // Body of the thread (i.e. what it does)
@@ -400,19 +400,6 @@ void scanKeysTask(void * pvParameters) {
     // Set the current stepSize, according to the key matrix
     setCurrentStepSizeAndPlayingNotes();
 
-    // Delay the next execution until new initiation according to xFrequency
-    vTaskDelayUntil(&xLastWakeTime, xFrequency);
-  }
-}
-
-// THREAD: Scan the knobs and set the local parameters + send relevant CAN messages
-void scanKnobsTask(void * pvParameters) {
-  // Define parameters for how to run the thread
-  const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 20ms (have to div. by const. to get time in ms)
-  TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
-
-  // Body of the thread (i.e. what it does)
-  while(1){
     // Set the current rotation of knob 3, according to the key matrix
     knob3.updateCurrentRotation();
     knob2.updateCurrentRotation();
@@ -442,20 +429,6 @@ void scanKnobsTask(void * pvParameters) {
       lastSwitched = micros();
     }
 
-    // Delay the next execution until new initiation according to xFrequency
-    vTaskDelayUntil(&xLastWakeTime, xFrequency);
-  }
-}
-
-
-// THREAD: Scan the keys and set the currentStepSize/notes_playing
-void HandshakeTask(void * pvParameters) {
-  // Define parameters for how to run the thread
-  const TickType_t xFrequency = 100/portTICK_PERIOD_MS;  //Initiation interval -> 100ms (have to div. by const. to get time in ms)
-  TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
-
-  // Body of the thread (i.e. what it does)
-  while(1){
     // Set both the East and West detect ports to HIGH
     westDetect.writeToPin(true);
     eastDetect.writeToPin(true);
@@ -705,39 +678,17 @@ void setup() {
   sampleTimer->resume();
 
   // Initialize the thread to scan keys and set the currentStepSize
-  TaskHandle_t scanKeysHandle = NULL;
+  TaskHandle_t scanInputsHandle = NULL;
   xTaskCreate(
-    scanKeysTask,
-    "scanKeys",
+    scanInputsTask,
+    "scanInputs",
     64,
     NULL,
-    6,    // Higher number for higher priority
-    &scanKeysHandle
+    4,    // Higher number for higher priority
+    &scanInputsHandle
   );
 
-  // Initialize the thread to scan keys and set the currentStepSize
-  TaskHandle_t scanKnobsHandle = NULL;
-  xTaskCreate(
-    scanKnobsTask,
-    "scanKnobs",
-    64,
-    NULL,
-    5,
-    &scanKnobsHandle
-  );
-
-    // Initialize the thread to scan keys and set the currentStepSize
-  TaskHandle_t HandshakeHandle = NULL;
-  xTaskCreate(
-    HandshakeTask,
-    "Handshake",
-    64,
-    NULL,
-    4,
-    &HandshakeHandle
-  );
-
-  // Initialize the thread to scan keys and set the currentStepSize
+  // Initialize the thread to update the display
   TaskHandle_t displayUpdateHandle = NULL;
   xTaskCreate(
     displayUpdateTask,
