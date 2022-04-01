@@ -1,5 +1,3 @@
-<script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=default"></script>
-
 # returnSuccess4 - Analysis Report
 
 This is the analysis report for the Music Synthesizer Coursework (CW2) of the EEE Embedded Systems module (Spring 2022).
@@ -16,7 +14,7 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 
 ## Real Time Critical Analysis
 
-|       Task        | Priority (Low to High) | Initiation  Interval (ms) | Execution Time (ms) | <img src="https://render.githubusercontent.com/render/math?math=[\frac{\tau_n}{\tau_i}] T_i"> | CPU Utilisation (%) |
+|       Task        | Priority (Low to High) | Initiation  Interval (ms) | Execution Time (ms) | <img src="https://render.githubusercontent.com/render/math?math=[\frac{\tau_n}{\tau_i}] T_i" width = "10"> | CPU Utilisation (%) |
 |:-----------------|:----------------------:|:-------------------------:|:-------------------:|:---------------------------------------:|:--------------------:|
 | displayUpdateTask |            1           |            100            |        16.334       |                  16.334                 |        16.334        |
 | decodeTask        |            2           |            25.2           |        0.0113       |                  0.045                  |         0.045        |
