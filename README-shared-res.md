@@ -79,7 +79,7 @@ As this graph is acyclic (i.e. there are no cycles/loops), this means that there
 
 As part of this project, we have implemented several advanced features:
 
-* A board mode Button (Button of Knob 0) that, when being pressed, sets the current board to the Receiver and all other connected boards to be Senders. (*Note: by default all boards are set to be receivers until a specific one is chosen*)
+* A board mode Button (Button of Knob 0) that, when being pressed, sets the current board as Receiver and all other connected boards to be Senders. (*Note: by default all boards are set to be receivers until a specific one is chosen*)
 
 * A mute-switch has been implemented: by simply pressing on the Button of Knob 3 (the right-most knob), the output speaker of the current board will be disabled (and a `X` will be displayed instead of the volume level after `Vol:`).
 
