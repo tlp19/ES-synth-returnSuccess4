@@ -14,7 +14,7 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 
 ## Real Time Critical Analysis
 
-|       Task        | Priority (Low to High) | Initiation  Interval (ms) | Execution Time (ms) | <img src="https://render.githubusercontent.com/render/math?math=[\frac{\tau_n}{\tau_i}] T_i" width = "70"> | CPU Utilisation (%) |
+|       Task        | Priority (Low to High) | Initiation  Interval (ms) | Execution Time (ms) | <img src="https://render.githubusercontent.com/render/math?math=[\frac{\tau_n}{\tau_i}] T_i" width = "50"> | CPU Utilisation (%) |
 |:-----------------|:----------------------:|:-------------------------:|:-------------------:|:---------------------------------------:|:--------------------:|
 | displayUpdateTask |            1           |            100            |        16.334       |                  16.334                 |        16.334        |
 | decodeTask        |            2           |            25.2           |        0.0113       |                  0.045                  |         0.045        |
@@ -24,11 +24,7 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 | CAN_RX_ISR        |        Interrupt       |            0.7            |       0.00319       |                  0.456                  |         0.456        |
 |                   |                        |                           |        Total        |                  39.700                 |        39.700
 
-To know if a specific schedule will work, we need to analyse the total latency of the system and compare it to the latency 
-of the lowest-priority task. 
 
-As our total latency: 39.7ms, is less than the latency of our lowest-priority task 'displayUpdateTask':100ms, none of the
-deadlines will be missed and our schedule will work without failures. 
 
 </br>
 
