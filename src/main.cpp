@@ -239,7 +239,7 @@ QueueHandle_t msgOutQ;
 SemaphoreHandle_t CAN_TX_Semaphore;
 
 /// Analyse the output of the keymatrix read, and get which key is being pressed (also setting the right currentStepSize)
-void setCurrentStepSize() {
+void setCurrentStepSizeAndPlayingNotes() {
   // Local variable for currentStepSize
   int32_t localCurrentStepSize;
   // CAN Bus transmissable message
@@ -270,8 +270,6 @@ void setCurrentStepSize() {
             localCurrentStepSize = shiftByOctave(localCurrentStepSize, knob2.getRotation());
 
             // Update the array with notes that are currently playing
-            // TODO: NOT THREAD SAFE
-            //notes_playing[i*4+j] = true;
             if(isReceiverBoard){
               __atomic_store_n(&notes_playing[12*knob2.getRotation() + (i*4+j)], true, __ATOMIC_RELAXED);
             }
@@ -281,7 +279,6 @@ void setCurrentStepSize() {
             localCurrentStepSize = 0;
             
             // Update the array with notes that are currently playing
-            //notes_playing[i*4+j] = false;
             if(isReceiverBoard){
               __atomic_store_n(&notes_playing[12*knob2.getRotation() + (i*4+j)], false, __ATOMIC_RELAXED);
             }
@@ -362,7 +359,7 @@ void sampleISR() {
 }
 
 
-// CAN Bus Message Queue ISR Writer
+// CAN Bus Message RX Queue ISR Writer
 void CAN_RX_ISR (void) {
   uint8_t RX_Message_ISR[8];
   uint32_t ID;
@@ -370,17 +367,17 @@ void CAN_RX_ISR (void) {
   xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
 }
 
-// CAN Bus Message Queue ISR Writer
+// CAN Bus Message TX Queue ISR Writer
 void CAN_TX_ISR (void) {
   xSemaphoreGiveFromISR(CAN_TX_Semaphore, NULL);
 }
 
 // -------------------------------- THREADS -----------------------------
 
-// THREAD: Scan the keys and set the currentStepSize
+// THREAD: Scan the keys and set the currentStepSize/notes_playing
 void scanKeysTask(void * pvParameters) {
   // Define parameters for how to run the thread
-  const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
+  const TickType_t xFrequency = 50/portTICK_PERIOD_MS;  //Initiation interval -> 50ms (have to div. by const. to get time in ms)
   TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
 
   // Body of the thread (i.e. what it does)
@@ -401,7 +398,21 @@ void scanKeysTask(void * pvParameters) {
       xSemaphoreGive(keyArrayMutex);
     }
     // Set the current stepSize, according to the key matrix
-    setCurrentStepSize();
+    setCurrentStepSizeAndPlayingNotes();
+
+    // Delay the next execution until new initiation according to xFrequency
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+  }
+}
+
+// THREAD: Scan the knobs and set the local parameters + send relevant CAN messages
+void scanKnobsTask(void * pvParameters) {
+  // Define parameters for how to run the thread
+  const TickType_t xFrequency = 20/portTICK_PERIOD_MS;  //Initiation interval -> 20ms (have to div. by const. to get time in ms)
+  TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
+
+  // Body of the thread (i.e. what it does)
+  while(1){
     // Set the current rotation of knob 3, according to the key matrix
     knob3.updateCurrentRotation();
     knob2.updateCurrentRotation();
@@ -431,28 +442,45 @@ void scanKeysTask(void * pvParameters) {
       lastSwitched = micros();
     }
 
+    // Delay the next execution until new initiation according to xFrequency
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+  }
+}
+
+
+// THREAD: Scan the keys and set the currentStepSize/notes_playing
+void HandshakeTask(void * pvParameters) {
+  // Define parameters for how to run the thread
+  const TickType_t xFrequency = 100/portTICK_PERIOD_MS;  //Initiation interval -> 100ms (have to div. by const. to get time in ms)
+  TickType_t xLastWakeTime = xTaskGetTickCount();       //Store last initiation time
+
+  // Body of the thread (i.e. what it does)
+  while(1){
+    // Set both the East and West detect ports to HIGH
     westDetect.writeToPin(true);
     eastDetect.writeToPin(true);
-
     delayMicroseconds(5);
-
+    // Read from the East and West ports to see if there are other boards connected
     westDetect.readFromPin();
     eastDetect.readFromPin();
 
+    // Send CAN messages to perform Handshaking
     static uint32_t lastMiddleCANSent = 0;
     if(westDetect.getState() && eastDetect.getState()){
       // The board has index 1
       __atomic_store_n(&boardIndex, 1, __ATOMIC_RELAXED);
-      if ((millis()-lastMiddleCANSent) > 50) {
-        //send message to tell other boards there is a Middle
+      if ((millis()-lastMiddleCANSent) > 100) {
+        //send message to tell other boards there is a Middle every 100ms
         uint8_t TX_Message[8] = {0};
         TX_Message[0] = 'M';
         xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
       }
     } else if(!westDetect.getState() && eastDetect.getState()) {
+      // It is the left-most board: index 0
       __atomic_store_n(&boardIndex, 0, __ATOMIC_RELAXED);
     }
     else if(westDetect.getState() && !eastDetect.getState()) {
+      // It is the right-most board: index 1 or 2, depending on if there is a middle board
       if ((millis()-lastMiddleCANRX) < 500) {
         __atomic_store_n(&boardIndex, 2, __ATOMIC_RELAXED);
       } else {
@@ -475,7 +503,7 @@ void displayUpdateTask(void * pvParameters) {
   while(1){
     //Update display
     u8g2.clearBuffer();         // clear the internal memory
-    u8g2.setFont(u8g2_font_profont12_tf); // choose a suitable font
+    u8g2.setFont(u8g2_font_profont11_tf); // choose a suitable font
 
     // Print the current local key to the screen
     u8g2.drawStr(2,10, "Keys:"); 
@@ -491,13 +519,6 @@ void displayUpdateTask(void * pvParameters) {
     } else {
       u8g2.drawStr(35,10, "-");
     }
- 
-
-    // u8g2.drawStr(2,20, "WE:"); 
-    // u8g2.setCursor(30,20);
-    // u8g2.print(westDetect.getState());
-    // u8g2.setCursor(40,20);
-    // u8g2.print(eastDetect.getState());
 
     // Current Volume
     u8g2.drawStr(90,30, "Vol:"); 
@@ -525,28 +546,31 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.print(waveMode); 
 
     // Current boardMode
+    u8g2.setFont(u8g2_font_profont10_tf); // choose a suitable font
     char* senderOrReceiver;
     if(isReceiverBoard) {
-      senderOrReceiver = (char*)"R";
+      senderOrReceiver = (char*)"Receiver";
     } else {
-      senderOrReceiver = (char*)"S";
+      senderOrReceiver = (char*)"Sender";
     }
     u8g2.setCursor(2,20);
     u8g2.print(senderOrReceiver);
 
-    u8g2.setCursor(10,20);
+    u8g2.drawStr(95,20, "Idx"); 
+    u8g2.setCursor(115,20);
     u8g2.print(boardIndex);
+    u8g2.setFont(u8g2_font_profont11_tf); // choose a suitable font
     
-    // CAN bus messages
-    uint8_t localRX_Message[8];
-    xSemaphoreTake(RX_MessageMutex, portMAX_DELAY);
-      memcpy(&localRX_Message, (void*) &RX_Message, sizeof(RX_Message));
-    xSemaphoreGive(RX_MessageMutex);
-    u8g2.drawStr(75,20, "CAN:"); 
-    u8g2.setCursor(100,20);
-    u8g2.print((char) localRX_Message[0]);
-    u8g2.print(localRX_Message[1]);
-    u8g2.print(localRX_Message[2]);
+    // For debugging: CAN bus messages
+    // uint8_t localRX_Message[8];
+    // xSemaphoreTake(RX_MessageMutex, portMAX_DELAY);
+    //   memcpy(&localRX_Message, (void*) &RX_Message, sizeof(RX_Message));
+    // xSemaphoreGive(RX_MessageMutex);
+    // u8g2.drawStr(75,20, "CAN:"); 
+    // u8g2.setCursor(100,20);
+    // u8g2.print((char) localRX_Message[0]);
+    // u8g2.print(localRX_Message[1]);
+    // u8g2.print(localRX_Message[2]);
 
     //Send to the display
     u8g2.sendBuffer();          // transfer internal memory to the display
@@ -687,11 +711,33 @@ void setup() {
     "scanKeys",
     64,
     NULL,
-    4,
+    6,    // Higher number for higher priority
     &scanKeysHandle
   );
 
+  // Initialize the thread to scan keys and set the currentStepSize
+  TaskHandle_t scanKnobsHandle = NULL;
+  xTaskCreate(
+    scanKnobsTask,
+    "scanKnobs",
+    64,
+    NULL,
+    5,
+    &scanKnobsHandle
+  );
+
     // Initialize the thread to scan keys and set the currentStepSize
+  TaskHandle_t HandshakeHandle = NULL;
+  xTaskCreate(
+    HandshakeTask,
+    "Handshake",
+    64,
+    NULL,
+    4,
+    &HandshakeHandle
+  );
+
+  // Initialize the thread to scan keys and set the currentStepSize
   TaskHandle_t displayUpdateHandle = NULL;
   xTaskCreate(
     displayUpdateTask,
