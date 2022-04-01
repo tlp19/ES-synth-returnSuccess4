@@ -15,15 +15,22 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 
 ## Description of Tasks
 
-Threads:
-* `scanInputTask` 
+**Threads:**
+
+* `scanInputsTask`: This thread first scans the Key Matrix of the board, and then assigns the current step size (or current notes playing, depending on the waveform mode of the board). The rotation of the knobs is then updated (and the relevant CAN messages are sent to other boards), and the handshaking checks are performed to analyse the relative position of the boards.
+
 * `decodeTask`
+
 * `displayUpdateTask`
+
 * `CAN_TX_Task`  
 
-Interrupts:
+**Interrupts:**
+
 * `sampleISR`
+
 * `CAN_TX_ISR` 
+
 * `CAN_RX_ISR` 
 
 
@@ -42,7 +49,7 @@ task.
 | `scanInputTask`     |            4           |             20            |        0.3007       |                  1.504                  |         1.504        |
 | `sampleISR`         |        Interrupt       |          0.04545          |        0.0097       |                  21.342                 |        21.342        |
 | `CAN_RX_ISR`        |        Interrupt       |            0.7            |       0.00319       |                  0.456                  |         0.456        |
-|                   |                        |                           |        Total        |                  39.700                 |        39.700
+|                   |                        |                           |        **Total**      |                  39.700                 |        39.700
 
 The total latency obtained is 39.7ms, which is clearly less than the latency of our lowest-priority task `displayUpdateTask`: 100ms. Therefore none of the deadlines will be missed and our schedule will work without failures as all the tasks will be executed in the correct time frame.
 
@@ -84,7 +91,7 @@ And those shared resources are the following:
 
 All dependencies between the tasks of our program can be visualized in a dependency graph:
 
-<img src="./dependency_graph.jpg" alt="Dependency Graph" width="500"/>
+<img src="./dependency_graph.jpg" alt="Dependency Graph" width="550"/>
 
 Where all red dependencies are external dependencies, interrupts are represented by an ellipsis, threads are represented by a rounded rectangle, and queues have been explicitely represented as green rectangles for a more detailed representation.
 
