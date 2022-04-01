@@ -565,18 +565,18 @@ void decodeTask(void * pvParameters) {
       memcpy((void*) &RX_Message, &localRX_Message, sizeof(localRX_Message));
     xSemaphoreGive(RX_MessageMutex);
 
-    if(RX_Message[0]=='S') {
+    if(localRX_Message[0]=='S') {
       // Set the current board as a sender
       __atomic_store_n(&isReceiverBoard, false, __ATOMIC_RELAXED);
     }
     
-    if(RX_Message[0]=='M') {
+    if(localRX_Message[0]=='M') {
       // Update the lastMiddleCANRX to be now
       __atomic_store_n(&lastMiddleCANRX, millis(), __ATOMIC_RELAXED);
-    } else if((RX_Message[0]=='S')||(RX_Message[0]=='K')) {
-      int senderIndex = RX_Message[1];
-      int knobIndex = RX_Message[2];
-      int knobValue = RX_Message[3];
+    } else if((localRX_Message[0]=='S')||(localRX_Message[0]=='K')) {
+      int senderIndex = localRX_Message[1];
+      int knobIndex = localRX_Message[2];
+      int knobValue = localRX_Message[3];
       if(knobIndex == 2) {
         // Assign the octave according to position of board
         int newOctave = knobValue + (boardIndex - senderIndex);
@@ -591,21 +591,21 @@ void decodeTask(void * pvParameters) {
     }
 
     if(isReceiverBoard) {
-      if(RX_Message[0]=='P') {
+      if(localRX_Message[0]=='P') {
         int32_t localCurrentStepSize = 0;
         // Set the note accordingly
-        localCurrentStepSize = stepSizes[RX_Message[2]];
-        localCurrentStepSize = shiftByOctave(localCurrentStepSize, RX_Message[1]);
+        localCurrentStepSize = stepSizes[localRX_Message[2]];
+        localCurrentStepSize = shiftByOctave(localCurrentStepSize, localRX_Message[1]);
         __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
 
-        uint8_t octave = RX_Message[1];
-        uint8_t key = RX_Message[2];
+        uint8_t octave = localRX_Message[1];
+        uint8_t key = localRX_Message[2];
         __atomic_store_n(&notes_playing[12*octave + key], true, __ATOMIC_RELAXED);
 
-      } else if (RX_Message[0]=='R') {
+      } else if (localRX_Message[0]=='R') {
         __atomic_store_n(&currentStepSize, 0, __ATOMIC_RELAXED);
-        uint8_t octave = RX_Message[1];
-        uint8_t key = RX_Message[2];
+        uint8_t octave = localRX_Message[1];
+        uint8_t key = localRX_Message[2];
         __atomic_store_n(&notes_playing[12*octave + key], false, __ATOMIC_RELAXED);
       }
     }
