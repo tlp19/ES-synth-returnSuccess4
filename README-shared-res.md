@@ -93,6 +93,6 @@ As part of this project, we have implemented several advanced features:
 
 * This handshaking is then used to dynamically change the octaves of all contiguous boards, such that a board is always set to an octave higher than the one on its left.
 
-* The volume of all boards (Knob 3), and the waveform mode of all boards (Knob 1), are synchronized between all the boards using the [CAN_Knob](./lib/Knob/can_knob.hpp) custom object class which makes this code easily scalable to accomodate more advanced features.
+* The volume of all boards (Knob 3), and the waveform mode of all boards (Knob 1), are synchronized across all the boards using the [CAN_Knob](./lib/Knob/can_knob.hpp) custom object class which makes this code easily scalable to accomodate more advanced features.
 
 
