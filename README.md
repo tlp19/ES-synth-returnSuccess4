@@ -17,7 +17,7 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 
 ## Real Time Critical Analysis
 
-|       Task        | Priority (Low to High) | Initiation  Interval (ms) | Execution Time (ms) | $\left[\frac{\tau_n}{\tau_i}\right]T_i$ | CPU Untilisation (%) |
+|       Task        | Priority (Low to High) | Initiation  Interval (ms) | Execution Time (ms) | $\left[\frac{\tau_n}{\tau_i}\right]T_i$ | CPU Utilisation (%) |
 |:-----------------|:----------------------:|:-------------------------:|:-------------------:|:---------------------------------------:|:--------------------:|
 | displayUpdateTask |            1           |            100            |        16.334       |                  16.334                 |        16.334        |
 | decodeTask        |            2           |            25.2           |        0.0113       |                  0.045                  |         0.045        |
