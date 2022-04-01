@@ -473,7 +473,7 @@ void displayUpdateTask(void * pvParameters) {
   while(1){
     //Update display
     u8g2.clearBuffer();         // clear the internal memory
-    u8g2.setFont(u8g2_font_profont11_tf); // choose a suitable font
+    u8g2.setFont(u8g2_font_profont12_tf); // choose a suitable font
 
     // Print the current local key to the screen
     u8g2.drawStr(2,10, "Keys:"); 
@@ -529,7 +529,7 @@ void displayUpdateTask(void * pvParameters) {
     u8g2.drawStr(95,20, "Idx"); 
     u8g2.setCursor(115,20);
     u8g2.print(boardIndex);
-    u8g2.setFont(u8g2_font_profont11_tf); // choose a suitable font
+    u8g2.setFont(u8g2_font_profont12_tf); // choose a suitable font
     
     // For debugging: CAN bus messages
     // uint8_t localRX_Message[8];
