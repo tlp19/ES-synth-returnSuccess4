@@ -6,9 +6,16 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 
 ## Table of content
 
+* [Description of the Tasks](./README.md#description-of-the-tasks)
 * [Real Time Critical Analysis](./README.md#real-time-critical-analysis)
-* [Shared Ressources](./README.md#shared-ressources)
+* [Shared Resources](./README.md#shared-resources)
 * [Advanced Features](./README.md#advanced-features)
+
+</br>
+
+## Description of the Tasks
+
+abc
 
 </br>
 
@@ -18,17 +25,17 @@ abc
 
 </br>
 
-## Shared Ressources
+## Shared Resources
 
-### Description of shared ressources
+### Description of shared resources
 
-The shared ressources of our program are protected to guarantee safe access and synchronisation using:
+The shared resources of our program are protected to guarantee safe access and synchronisation using:
  * 2 Mutexes
  * 2 Queues
  * 1 Semaphore
  * Multiple atomic operations
 
-And those shared ressources are the following:
+And those shared resources are the following:
 
 1. The `keyArray`, which represents the state of all the input pins to the STM32. It is protected by the `keyArrayMutex` mutex that is used to write to it, or read to it in short bursts in order to minimize its locking time.
 
@@ -48,7 +55,7 @@ And those shared ressources are the following:
 
 1. Several board state variables, namely `isMuted` `isReceiverBoard` `lastMiddleCANRX` and `boardIndex` which are written to using atomic stores. This is once again because they can be accessed in an interrupt, such as `isMuted` in the `sampleISR` interrupt.
 
-1. Multiple objects of custom classes `CAN_Knob`, `Button` and `Detect` whose member variables are all written to using atomic operations, as they can be accessed in interrupts, such as `knob3.getRotation()` in the `sampleISR` interrupt.
+1. Multiple objects of custom classes [CAN_Knob](./lib/Knob/can_knob.hpp), [Button](./lib/Button/button.hpp) and [Detect](./lib/Detect/detect.hpp) whose member variables are all written to using atomic operations, as they can be accessed in interrupts, such as `knob3.getRotation()` in the `sampleISR` interrupt.
 
 ### Dependencies
 
@@ -70,4 +77,22 @@ As this graph is acyclic (i.e. there are no cycles/loops), this means that there
 
 ## Advanced Features
 
-abc
+As part of this project, we have implemented several advanced features:
+
+* A board mode Button (Button of Knob 0) that, when being pressed, sets the current board to the Receiver and all other connected boards to be Senders. (*Note: by default all boards are set to be receivers until a specific one is chosen*)
+
+* A mute-switch has been implemented: by simply pressing on the Button of Knob 3 (the right-most knob), the output speaker of the current board will be disabled (and a `X` will be displayed instead of the volume level after `Vol:`).
+
+* The octave of a Receiver board can be chosen using Knob 2 (displayed on the screen as `Oct:`).
+
+* We have also implemented support for Sinusoidal Waveforms, which can be chosen with Knob 1 (displayed on the screen as `~:`). This was implemented using look-up tables that are generated on start-up of the board (the implementation for this feature is in [sample_library.hpp](./lib/SampleLibrary/sample_library.hpp) ).
+
+* We have implemented polyphony for the Sinusoidal Waveform, such that multiple notes, from multiple boards with different octaves, can be played at once (without clipping).
+
+* We have implemented Handshaking with up to 3 boards to determine their relative positions (displayed as `Idx` on their respective screens).
+
+* This handshaking is then used to dynamically change the octaves of all contiguous boards, such that a board is always set to an octave higher than the one on its left.
+
+* The volume of all boards (Knob 3), and the waveform mode (Knob 1) of all boards is synchronized between all the boards using the [CAN_Knob](./lib/Knob/can_knob.hpp) custom object class which makes this code easily scalable to accomodate more advanced features.
+
+
