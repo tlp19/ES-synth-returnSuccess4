@@ -184,15 +184,12 @@ Check and fix overflow
 
 // Store the current stepSize in a volatile variable
 volatile int32_t currentStepSize = 0;
-// Store the currentKey being played
-volatile char* currentKey;
 
 // This is the new data structure, which is a 120-bit (12 keys x 9 octaves) array which holds the current notes that are playing
 volatile bool notes_playing[108];
 
 /// Octaves of Sinusoidal sound arrays
 extern const volatile Octave* sineOctaves[9];
-
 
 
 // Mutex to protect shared ressources
