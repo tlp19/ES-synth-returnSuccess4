@@ -15,6 +15,18 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 
 ## Tasks
 
+Threads:
+* ``scanInputTask` 
+* `decodeTask`
+* `displayUpdateTask`
+* `CAN_TX_Task`  
+
+Interrupts:
+* `sampleISR`
+* `CAN_TX_ISR` 
+* `CAN_RX_ISR` 
+
+
 </br>
 
 ## Real Time Critical Analysis
