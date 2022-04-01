@@ -94,7 +94,7 @@ All dependencies between the tasks of our program can be visualized in a depende
 
 <img src="./dependency_graph.jpg" alt="Dependency Graph" width="550"/>
 
-Where all red dependencies are external dependencies, interrupts are represented by an ellipsis, threads are represented by a rounded rectangle, and queues have been explicitely represented as green rectangles for a more detailed representation.
+Where all red dependencies are external dependencies, interrupts are represented by an ellipsis, threads are represented by a rounded rectangle, and queues have been explicitely represented as green rectangles for a more detailed representation of dependencies.
 
 We note that mutexes are ignored in this dependency graph as they contain non-blocking operations, and always unlock the ressource after a short period of time. Atomic operations are also ignored, as they do not cause problems with dependencies.
 
