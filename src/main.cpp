@@ -570,7 +570,8 @@ void decodeTask(void * pvParameters) {
     if(localRX_Message[0]=='M') {
       // Update the lastMiddleCANRX to be now
       __atomic_store_n(&lastMiddleCANRX, millis(), __ATOMIC_RELAXED);
-    } else if((localRX_Message[0]=='S')||(localRX_Message[0]=='K')) {
+    } 
+    else if((localRX_Message[0]=='S')||(localRX_Message[0]=='K')) {
       int senderIndex = localRX_Message[1];
       int knobIndex = localRX_Message[2];
       int knobValue = localRX_Message[3];
