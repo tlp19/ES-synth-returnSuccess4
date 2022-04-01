@@ -14,7 +14,7 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 
 ## Real Time Critical Analysis
 
-|       Task        | Priority (Low to High) | Initiation  Interval <img src="https://render.githubusercontent.com/render/math?math=\tau_i" width = "15"> (ms) | Execution Time <img src="https://render.githubusercontent.com/render/math?math=T_i" width = "15"> (ms) | <img src="https://render.githubusercontent.com/render/math?math=\left[\frac{\tau_n}{\tau_i} \right] T_i" width = "60"> | CPU Utilisation (%) |
+|       Task        | Priority (Low to High) | Initiation  Interval <img src="https://render.githubusercontent.com/render/math?math=\tau_i" width = "18"> (ms) | Execution Time <img src="https://render.githubusercontent.com/render/math?math=T_i" width = "25"> (ms) | <img src="https://render.githubusercontent.com/render/math?math=\left[\frac{\tau_n}{\tau_i} \right] T_i" width = "60"> | CPU Utilisation (%) |
 |:-----------------|:----------------------:|:-------------------------:|:-------------------:|:---------------------------------------:|:--------------------:|
 | displayUpdateTask |            1           |            100            |        16.334       |                  16.334                 |        16.334        |
 | decodeTask        |            2           |            25.2           |        0.0113       |                  0.045                  |         0.045        |
@@ -24,6 +24,11 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 | CAN_RX_ISR        |        Interrupt       |            0.7            |       0.00319       |                  0.456                  |         0.456        |
 |                   |                        |                           |        Total        |                  39.700                 |        39.700
 
+A Critical time analysis is crucial to predict whether all the tasks will be executed within the deadlines of a system. 
+To do this, it is necessary to analyse the total latency of the system and compare it to the latency of the lowest-priority 
+task. As our total latency: 39.7ms, is clearly less than the latency of our lowest-priority task `displayUpdateTask`:100ms, 
+none of the deadlines will be missed and our schedule will work without failures as all the tasks will be executed in the correct
+time frame.
 
 
 </br>
