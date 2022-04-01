@@ -1,4 +1,4 @@
-# returnSuccess4 - Analysis Report
+# returnSuccess4.0 - Analysis Report
 
 This is the analysis report for the Music Synthesizer Coursework (CW2) of the EEE Embedded Systems module (Spring 2022).
 
