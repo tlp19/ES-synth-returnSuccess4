@@ -40,7 +40,7 @@ And those shared ressources are the following:
 
 1. The `msgInQ` queue, which acts as a buffer for incoming messages from the CAN Bus.
 
-1. The last received message, `RX_Message`, which is protected by the `RX_MessageMutex` mutex as it is accessed in multiple threads (mainly the decodeTask and the updateDisplayTask (for debugging)). When used in the decodeTask thread, it is only accessed briefly to store its content into a local variable that is then used for analysis its content, still to minimize locking time.
+1. The last received message, `RX_Message`, which is protected by the `RX_MessageMutex` mutex as it is accessed in multiple threads (mainly the decodeTask and the updateDisplayTask (for debugging)). When used in the decodeTask thread, it is only accessed briefly to store its content into a local variable that is then used for the computational analysis of its content, still to minimize locking time.
 
 1. The `msgOutQ` queue, which acts as a buffer for outgoing messages to the CAN Bus.
 
