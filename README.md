@@ -16,7 +16,7 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 ## Tasks
 
 Threads:
-* ``scanInputTask` 
+* `scanInputTask` 
 * `decodeTask`
 * `displayUpdateTask`
 * `CAN_TX_Task`  
