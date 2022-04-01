@@ -87,7 +87,7 @@ As part of this project, we have implemented several advanced features:
 
 * We have also implemented support for Sinusoidal Waveforms, which can be chosen with Knob 1 (displayed on the screen as `~:`). This was implemented using look-up tables that are generated on start-up of the board (the implementation for this feature is in [sample_library.hpp](./lib/SampleLibrary/sample_library.hpp)).
 
-* We have implemented polyphony for the Sinusoidal Waveform, such that multiple notes, from multiple boards with different octaves, can be played at once (without clipping).
+* We have implemented polyphony for the Sinusoidal Waveform, such that multiple notes from multiple boards with different octaves, can be played at once (without clipping).
 
 * We have implemented Handshaking with up to 3 boards to determine their relative positions (displayed as `Idx` on their respective screens).
 
