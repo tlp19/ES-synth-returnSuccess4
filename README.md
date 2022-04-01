@@ -27,6 +27,8 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 | CAN_RX_ISR        |        Interrupt       |            0.7            |       0.00319       |                  0.456                  |         0.456        |
 |                   |                        |                           |        Total        |                  39.700                 |        39.700
 
+
+
 </br>
 
 ## Shared Ressources
