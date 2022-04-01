@@ -13,7 +13,7 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 
 </br>
 
-## Real Time Critical Analysis
+## Tasks
 
 </br>
 
