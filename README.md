@@ -44,8 +44,7 @@ task.
 | `CAN_RX_ISR`        |        Interrupt       |            0.7            |       0.00319       |                  0.456                  |         0.456        |
 |                   |                        |                           |        Total        |                  39.700                 |        39.700
 
-The total latency obtained is 39.7ms, which is clearly less than the latency of our lowest-priority task `displayUpdateTask`:100ms. Therefore none of the deadlines will be missed and our schedule will work without failures as all the tasks will be executed in the correct
-time frame.
+The total latency obtained is 39.7ms, which is clearly less than the latency of our lowest-priority task `displayUpdateTask`: 100ms. Therefore none of the deadlines will be missed and our schedule will work without failures as all the tasks will be executed in the correct time frame.
 
 </br>
 
