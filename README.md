@@ -8,7 +8,7 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 
 * [Description of Tasks](./README.md#description-of-tasks)
 * [Real Time Critical Analysis](./README.md#real-time-critical-analysis)
-* [Shared Ressources](./README.md#shared-ressources)
+* [Shared Resources](./README.md#shared-resources)
 * [Advanced Features](./README.md#advanced-features)
 
 </br>
