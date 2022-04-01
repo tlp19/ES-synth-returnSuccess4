@@ -19,20 +19,19 @@ This is the analysis report for the Music Synthesizer Coursework (CW2) of the EE
 
 * `scanInputsTask`: This thread first scans the Key Matrix of the board, and then assigns the current step size (or current notes playing, depending on the waveform mode of the board). The rotation of the knobs is then updated (and the relevant CAN messages are sent to other boards), and the handshaking checks are performed to analyse the relative position of the boards.
 
-* `decodeTask`
+* `displayUpdateTask`: This thread displays the keys being played, as well as the volume, octave and waveform mode of the board. It also displays whether the board is a Receiver or a Sender, as well as its position in the multi-board configuration.
 
-* `displayUpdateTask`
+* `decodeTask`: This thread analyses the last received message from the CAN Bus and updates the current step size coming from other boards (or current notes playing, depending on the waveform mode of the board) and synchronizes the rotation of the knobs of Sender boards. It also detects the status messages coming from a potential middle board (used for Handshaking, for more details see [Advanced Features](./README.md#advanced-features)).
 
-* `CAN_TX_Task`  
+* `CAN_TX_Task`: This thread obtains the messages from the Outgoing Messages queue (`msgOutQ`), and if the output CAN slots of the micro-controller are free, sends them through the CAN bus for communication with other boards.
 
 **Interrupts:**
 
-* `sampleISR`
+* `sampleISR`: This interrupt outputs a voltage to the speaker module at a rate of **22000Hz** to generate the desired waveform at the frequencies of the notes being played.
 
-* `CAN_TX_ISR` 
+* `CAN_RX_ISR`: This interrupt gets called every time a CAN message is **received** through the CAN Bus. It places the incoming message onto the Incoming Messages queue `msgInQ`.
 
-* `CAN_RX_ISR` 
-
+* `CAN_TX_ISR`: This interrupt gets called every time a CAN message is **sent** through the CAN Bus. It is used to keep track of the number of free output CAN slots that can be used by the `CAN_TX_Task` thread, this is done through a counting Semaphore.
 
 </br>
 
