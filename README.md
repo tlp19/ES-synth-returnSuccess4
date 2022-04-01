@@ -52,7 +52,7 @@ task.
 
 The total latency obtained is 39.7ms, which is clearly less than the latency of our lowest-priority task `displayUpdateTask`: 100ms. Therefore none of the deadlines will be missed and our schedule will work without failures as all the tasks will be executed in the correct time frame.
 
-The total CPU utilisation of our program is around 40%.
+The total CPU utilisation of our program is around **40%**.
 
 </br>
 
@@ -102,7 +102,7 @@ As shown in the graph, the RX and TX queues, respectively `msgInQ` and `msgOutQ`
 
 The dependency between `CAN_TX_Task` and `CAN_TX_ISR` is because of the Counting Semaphore `CAN_TX_Semaphore` that regulates the flow of outgoing messages to the CAN Bus. This is because the STM32 can only load three messages at a time to be sent out to the bus. This semaphore therefore blocks the `CAN_TX_Task` thread until an output slot is free.
 
-As this graph is acyclic (i.e. there are no cycles/loops), this means that there are no risks of deadlocks in our program.
+As this graph is acyclic (i.e. there are no cycles/loops), this means that there are **no risks of deadlocks** in our program.
 
 </br>
 
