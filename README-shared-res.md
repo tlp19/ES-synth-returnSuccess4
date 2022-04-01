@@ -85,7 +85,7 @@ As part of this project, we have implemented several advanced features:
 
 * The octave of a Receiver board can be chosen using Knob 2 (displayed on the screen as `Oct:`).
 
-* We have also implemented support for Sinusoidal Waveforms, which can be chosen with Knob 1 (displayed on the screen as `~:`). This was implemented using look-up tables that are generated on start-up of the board (the implementation for this feature is in [sample_library.hpp](./lib/SampleLibrary/sample_library.hpp) ).
+* We have also implemented support for Sinusoidal Waveforms, which can be chosen with Knob 1 (displayed on the screen as `~:`). This was implemented using look-up tables that are generated on start-up of the board (the implementation for this feature is in [sample_library.hpp](./lib/SampleLibrary/sample_library.hpp)).
 
 * We have implemented polyphony for the Sinusoidal Waveform, such that multiple notes, from multiple boards with different octaves, can be played at once (without clipping).
 
@@ -93,6 +93,6 @@ As part of this project, we have implemented several advanced features:
 
 * This handshaking is then used to dynamically change the octaves of all contiguous boards, such that a board is always set to an octave higher than the one on its left.
 
-* The volume of all boards (Knob 3), and the waveform mode (Knob 1) of all boards is synchronized between all the boards using the [CAN_Knob](./lib/Knob/can_knob.hpp) custom object class which makes this code easily scalable to accomodate more advanced features.
+* The volume of all boards (Knob 3), and the waveform mode of all boards (Knob 1), are synchronized between all the boards using the [CAN_Knob](./lib/Knob/can_knob.hpp) custom object class which makes this code easily scalable to accomodate more advanced features.
 
 
