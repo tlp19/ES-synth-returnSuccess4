@@ -52,6 +52,8 @@ task.
 
 The total latency obtained is 39.7ms, which is clearly less than the latency of our lowest-priority task `displayUpdateTask`: 100ms. Therefore none of the deadlines will be missed and our schedule will work without failures as all the tasks will be executed in the correct time frame.
 
+The total CPU utilisation of our program is around 40%.
+
 </br>
 
 ## Shared Resources
