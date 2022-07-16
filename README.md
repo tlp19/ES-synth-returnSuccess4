@@ -2,6 +2,8 @@
 
 This is the analysis report for the Music Synthesizer Coursework (CW2) of the EEE Embedded Systems module (Spring 2022).
 
+For this project, we built the **Real-Time Operating System of a Music synthesizer**. It can handle volume control, multiple octaves, polyphony, stackable keyboards, and 2 different types of waveforms (Sawtooth and Sinusoidal).
+
 </br>
 
 ## Table of content
